@@ -1,0 +1,6 @@
+node_modules/
+.pi/auth.json
+.env
+dist/
+build/
+.DS_Store
