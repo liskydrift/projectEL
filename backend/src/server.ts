@@ -275,6 +275,22 @@ async function startServer() {
       session.abort();
     });
 
+    // 客户端触发清空对话 / 新建会话
+    socket.on("clear-session", async () => {
+      try {
+        await session.abort();
+        session.sessionManager.newSession();
+        session.agent.state.messages = [];
+        io.emit("session-state", {
+          model: session.model?.id,
+          thinkingLevel: session.thinkingLevel,
+          messages: session.messages
+        });
+      } catch (err: any) {
+        socket.emit("pi-error", { message: err.message });
+      }
+    });
+
     socket.on("disconnect", () => {
       console.log("Client disconnected:", socket.id);
     });

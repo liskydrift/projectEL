@@ -176,15 +176,36 @@ export default function App() {
   };
 
   // --- Sockets and APIs ---
+  // 使用 mountedRef 防止组件卸载后仍然更新状态
+  const mountedRef = useRef(true);
   useEffect(() => {
-    const socket = io('http://localhost:3000');
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  useEffect(() => {
+    // 防止重复创建连接：如果 socketRef 已有活跃连接，先断开
+    if (socketRef.current) {
+      socketRef.current.removeAllListeners();
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+
+    const socket = io('http://localhost:3000', {
+      // 防止自动重连导致多个连接并存
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      // 确保 transport 升级时不会创建多余连接
+      transports: ['websocket', 'polling']
+    });
     socketRef.current = socket;
 
     socket.on('connect', () => {
-      console.log('Connected to Backend Socket');
+      console.log('Connected to Backend Socket:', socket.id);
     });
 
     socket.on('session-state', (data: { model?: string; thinkingLevel?: string; messages: any[] }) => {
+      if (!mountedRef.current) return;
       if (data.model) setActiveModel(data.model);
       if (data.thinkingLevel) setThinkingLevel(data.thinkingLevel);
       
@@ -205,20 +226,38 @@ export default function App() {
     });
 
     socket.on('pi-event', (event: any) => {
+      if (!mountedRef.current) return;
+
       if (event.type === 'agent_start') {
         setIsStreaming(true);
       } else if (event.type === 'agent_end') {
         setIsStreaming(false);
       } else if (event.type === 'message_start') {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: event.message.id || String(Date.now()),
-            role: event.message.role,
-            text: '',
-            customType: event.message.customType
+        const newId = event.message.id || `msg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        setMessages((prev) => {
+          // 幂等性检查：如果已存在相同 ID 的消息，跳过添加
+          if (prev.some(m => m.id === newId)) return prev;
+
+          // 关键点：如果是用户消息，尝试找到最近一条本地生成的未匹配 ID 的用户消息，
+          // 将其 ID 更新为后端分配的真实 ID，从而避免生成两个重复的用户消息气泡
+          if (event.message.role === 'user') {
+            const lastUserIdx = [...prev].reverse().findIndex(m => m.role === 'user');
+            if (lastUserIdx !== -1) {
+              const idx = prev.length - 1 - lastUserIdx;
+              return prev.map((m, i) => i === idx ? { ...m, id: newId } : m);
+            }
           }
-        ]);
+
+          return [
+            ...prev,
+            {
+              id: newId,
+              role: event.message.role,
+              text: '',
+              customType: event.message.customType
+            }
+          ];
+        });
       } else if (event.type === 'message_end') {
         const msg = event.message;
         let text = '';
@@ -230,34 +269,49 @@ export default function App() {
         setMessages((prev) => {
           const exists = prev.some(m => m.id === msg.id);
           if (exists) {
+            // 使用完整的不可变更新替换匹配的消息
             return prev.map(m => m.id === msg.id ? { ...m, text, role: msg.role, customType: msg.customType } : m);
           } else {
-            return [...prev, { id: msg.id || String(Date.now()), role: msg.role, text, customType: msg.customType }];
+            return [...prev, { id: msg.id || `msg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`, role: msg.role, text, customType: msg.customType }];
           }
         });
       } else if (event.type === 'message_update') {
         if (event.assistantMessageEvent?.type === 'text_delta') {
           const delta = event.assistantMessageEvent.delta;
           setMessages((prev) => {
-            const list = [...prev];
-            const last = list[list.length - 1];
-            if (last && last.role === 'assistant') {
-              last.text += delta;
-            }
-            return list;
+            // 🔧 关键修复：使用完全不可变的状态更新
+            // 之前的代码 `last.text += delta` 直接修改了 React 状态对象的引用，
+            // 在 React 18 并发模式下会导致同一个 delta 被追加多次（口吃的直接原因）。
+            // 正确做法：创建新的消息对象，永远不修改原始引用。
+            const lastIndex = prev.length - 1;
+            if (lastIndex < 0) return prev;
+            const last = prev[lastIndex];
+            if (last.role !== 'assistant') return prev;
+            
+            // 创建全新的数组和全新的消息对象
+            const updated = prev.slice(0, lastIndex);
+            updated.push({
+              ...last,
+              text: last.text + delta  // 新字符串，不修改原对象
+            });
+            return updated;
           });
         }
       } else if (event.type === 'tool_execution_start') {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: event.toolCallId,
-            role: 'toolCall',
-            toolName: event.toolName,
-            args: event.args,
-            text: `[运行工具] 正在执行 ${event.toolName}...`
-          }
-        ]);
+        setMessages((prev) => {
+          // 幂等性检查：防止重复添加工具消息
+          if (prev.some(m => m.id === event.toolCallId)) return prev;
+          return [
+            ...prev,
+            {
+              id: event.toolCallId,
+              role: 'toolCall',
+              toolName: event.toolName,
+              args: event.args,
+              text: `[运行工具] 正在执行 ${event.toolName}...`
+            }
+          ];
+        });
       } else if (event.type === 'tool_execution_end') {
         setMessages((prev) => {
           return prev.map((m) => {
@@ -277,12 +331,18 @@ export default function App() {
     });
 
     socket.on('pi-error', (data: { message: string }) => {
+      if (!mountedRef.current) return;
       alert(`Pi Core Error: ${data.message}`);
       setIsStreaming(false);
     });
 
     return () => {
+      // 彻底清理 Socket 连接，防止幽灵连接继续接收事件
+      socket.removeAllListeners();
       socket.disconnect();
+      if (socketRef.current === socket) {
+        socketRef.current = null;
+      }
     };
   }, []);
 
@@ -318,6 +378,13 @@ export default function App() {
   const handleAbort = () => {
     if (socketRef.current) {
       socketRef.current.emit('abort');
+    }
+  };
+
+  const handleClearSession = () => {
+    if (socketRef.current) {
+      socketRef.current.emit('clear-session');
+      setMessages([]);
     }
   };
 
@@ -373,6 +440,7 @@ export default function App() {
             onRemoveImage={removeSelectedImage}
             onSendMessage={handleSendMessage}
             onAbort={handleAbort}
+            onClear={handleClearSession}
             onClose={onClose}
           />
         );

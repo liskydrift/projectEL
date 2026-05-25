@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Terminal, Cpu, Send, Paperclip, XCircle, X } from 'lucide-react';
+import { Terminal, Cpu, Send, Paperclip, XCircle, X, Trash2 } from 'lucide-react';
 
 export interface ChatMessage {
   id: string;
@@ -24,6 +24,7 @@ interface ChatCardProps {
   onRemoveImage: (index: number) => void;
   onSendMessage: (e: React.FormEvent) => void;
   onAbort: () => void;
+  onClear?: () => void;
   onClose: () => void;
 }
 
@@ -39,6 +40,7 @@ export default function ChatCard({
   onRemoveImage,
   onSendMessage,
   onAbort,
+  onClear,
   onClose
 }: ChatCardProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -87,6 +89,40 @@ export default function ChatCard({
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {onClear && (
+            <button
+              onClick={onClear}
+              disabled={isStreaming}
+              style={{
+                width: '24px',
+                height: '24px',
+                backgroundColor: '#000000',
+                border: '2px solid #222222',
+                color: '#ffffff',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                cursor: isStreaming ? 'not-allowed' : 'pointer',
+                opacity: isStreaming ? 0.5 : 1,
+                transition: 'all 0.1s ease'
+              }}
+              onMouseEnter={(e) => {
+                if (!isStreaming) {
+                  e.currentTarget.style.borderColor = 'var(--secondary)';
+                  e.currentTarget.style.color = 'var(--secondary)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isStreaming) {
+                  e.currentTarget.style.borderColor = '#222222';
+                  e.currentTarget.style.color = '#ffffff';
+                }
+              }}
+              title="清空当前对话历史"
+            >
+              <Trash2 size={14} />
+            </button>
+          )}
           {isStreaming ? (
             <button 
               onClick={onAbort} 
