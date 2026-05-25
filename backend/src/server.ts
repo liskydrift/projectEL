@@ -7,6 +7,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs-extra";
 import { compileWorkflowToSkill } from "./compiler.js";
+import { KnowledgeBaseService } from "./knowledge-base/knowledge-base-service.js";
+import { createKnowledgeRoutes } from "./knowledge-base/knowledge-routes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -70,6 +72,12 @@ async function startServer() {
   session.subscribe((event) => {
     io.emit("pi-event", event);
   });
+
+  // 初始化知识库模块
+  const kbService = new KnowledgeBaseService(workspaceCwd);
+  await kbService.ensureDirectories();
+  const kbRouter = createKnowledgeRoutes(kbService, io);
+  app.use('/api/knowledge', kbRouter);
 
   // ----------------- HTTP 路由 -----------------
 

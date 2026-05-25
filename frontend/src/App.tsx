@@ -16,6 +16,7 @@ import SlideDrawer from './components/SlideDrawer';
 import SettingsPanel from './components/SettingsPanel';
 import ChatCard, { ChatMessage } from './components/ChatCard';
 import CanvasCard from './components/CanvasCard';
+import KnowledgeCard from './components/KnowledgeCard/KnowledgeCard';
 
 const initialNodes: Node[] = [
   { 
@@ -96,6 +97,14 @@ export default function App() {
       } else {
         return [...prev, cardId];
       }
+    });
+    // 为新卡片自动创建布局条目，否则 Workspace 不会渲染它
+    setCardLayout((prev) => {
+      if (prev.some(c => c.id === cardId)) return prev;
+      const usedColumns = [...new Set(prev.map(c => c.column))];
+      const targetCol = usedColumns.includes(0) ? (usedColumns.includes(1) ? 2 : 1) : 0;
+      const maxOrder = Math.max(-1, ...prev.filter(c => c.column === targetCol).map(c => c.order)) + 1;
+      return [...prev, { id: cardId, column: targetCol, order: maxOrder }];
     });
   };
 
@@ -233,6 +242,9 @@ export default function App() {
       } else if (event.type === 'agent_end') {
         setIsStreaming(false);
       } else if (event.type === 'message_start') {
+        // 工具结果由 tool_execution_start/tool_execution_end 处理，跳过避免空白气泡
+        if (event.message.role === 'toolResult') return;
+
         const newId = event.message.id || `msg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
         setMessages((prev) => {
           // 幂等性检查：如果已存在相同 ID 的消息，跳过添加
@@ -260,21 +272,28 @@ export default function App() {
         });
       } else if (event.type === 'message_end') {
         const msg = event.message;
-        let text = '';
-        if (typeof msg.content === 'string') {
-          text = msg.content;
-        } else if (Array.isArray(msg.content)) {
-          text = msg.content.map((c: any) => c.text || '').join('');
-        }
-        setMessages((prev) => {
-          const exists = prev.some(m => m.id === msg.id);
-          if (exists) {
-            // 使用完整的不可变更新替换匹配的消息
-            return prev.map(m => m.id === msg.id ? { ...m, text, role: msg.role, customType: msg.customType } : m);
-          } else {
-            return [...prev, { id: msg.id || `msg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`, role: msg.role, text, customType: msg.customType }];
+
+        // 用户消息由 handleSendMessage (乐观添加) + message_start (ID 替换) 处理完成，跳过避免重复
+        if (msg.role === 'user') return;
+
+        // 工具结果由 tool_execution_start/tool_execution_end 处理显示，跳过避免空白条目
+        if (msg.role === 'toolResult') return;
+
+        // 助手消息：更新最后一个 assistant 条目而非新建，避免"双气泡"
+        if (msg.role === 'assistant') {
+          let text = '';
+          if (typeof msg.content === 'string') {
+            text = msg.content;
+          } else if (Array.isArray(msg.content)) {
+            text = msg.content.map((c: any) => c.text || '').join('');
           }
-        });
+          setMessages((prev) => {
+            const lastIdx = [...prev].reverse().findIndex(m => m.role === 'assistant');
+            if (lastIdx === -1) return prev;
+            const idx = prev.length - 1 - lastIdx;
+            return prev.map((m, i) => i === idx ? { ...m, text, role: msg.role, customType: msg.customType } : m);
+          });
+        }
       } else if (event.type === 'message_update') {
         if (event.assistantMessageEvent?.type === 'text_delta') {
           const delta = event.assistantMessageEvent.delta;
@@ -458,6 +477,10 @@ export default function App() {
             setSelectedNode={setSelectedNode}
             updateSelectedNodeData={updateSelectedNodeData}
           />
+        );
+      case 'knowledge':
+        return (
+          <KnowledgeCard onClose={onClose} />
         );
       default:
         return null;

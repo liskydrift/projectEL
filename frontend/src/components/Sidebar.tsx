@@ -1,4 +1,4 @@
-import { MessageSquare, Layers, Settings, Cpu } from 'lucide-react';
+import { MessageSquare, Layers, BookOpen, Settings, Cpu } from 'lucide-react';
 
 interface SidebarProps {
   activeCards: string[];
@@ -9,7 +9,8 @@ interface SidebarProps {
 export default function Sidebar({ activeCards, onToggleCard, onOpenSettings }: SidebarProps) {
   const cards = [
     { id: 'chat', label: '聊天', icon: MessageSquare, color: 'var(--secondary)' },
-    { id: 'canvas', label: '画布', icon: Layers, color: 'var(--primary)' }
+    { id: 'canvas', label: '画布', icon: Layers, color: 'var(--primary)' },
+    { id: 'knowledge', label: '知识库', icon: BookOpen, color: 'var(--accent)' }
   ];
 
   return (
