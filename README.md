@@ -143,6 +143,17 @@ graph TD
 
 ---
 
+## 📂 项目文档 (Documentation)
+
+项目的所有设计、架构及开发文档已整理至 [docs/](file:///c:/Users/lisky/Desktop/projectEL/docs/) 目录下：
+
+*   **[开发者与进度指南 (develop.md)](file:///c:/Users/lisky/Desktop/projectEL/docs/develop.md)**：记录了当前开发进度、技术栈、双轨知识库机制及下一步开发指引。
+*   **[WebUI 设计与方向规划白皮书 (webui.md)](file:///c:/Users/lisky/Desktop/projectEL/docs/webui.md)**：包含系统的视觉设计规范（2D 粒子拓扑图谱）及开发迁移阶段。
+*   **[智能融合知识库架构白皮书 (knowledge_base_architecture_v2.md)](file:///c:/Users/lisky/Desktop/projectEL/docs/knowledge_base_architecture_v2.md)**：描述了时间维度的遗忘曲线算法、指数衰减模型、SM-2 间隔重复及归档审查 Veto 机制。
+*   **[智能体内核与编排架构设计 (learning_agent_architecture.md)](file:///c:/Users/lisky/Desktop/projectEL/docs/learning_agent_architecture.md)**：详细拆解了 React Flow 低代码画布与 Pi SDK 编译热重载的闭环机制。
+
+---
+
 ## 🛠️ 快速开始
 
 ### 环境要求
