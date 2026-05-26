@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, HelpCircle, Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { useChat } from '../contexts/ChatContext';
+import { useWorkspace } from '../contexts/WorkspaceContext';
 
-interface SettingsPanelProps {
-  onSaveComplete: (activeModel: string, thinkingLevel: string) => void;
-  onClose: () => void;
-}
+export default function SettingsPanel() {
+  const { sessionId, fetchActiveModelConfig } = useChat();
+  const { setActiveDrawer } = useWorkspace();
 
-export default function SettingsPanel({ onSaveComplete, onClose }: SettingsPanelProps) {
   const [providers, setProviders] = useState<any[]>([]);
   const [availableModels, setAvailableModels] = useState<any[]>([]);
   const [selectedModelProvider, setSelectedModelProvider] = useState<string>('anthropic');
@@ -22,7 +22,7 @@ export default function SettingsPanel({ onSaveComplete, onClose }: SettingsPanel
   const fetchModelConfig = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch('http://localhost:3000/api/models');
+      const response = await fetch(`http://localhost:3000/api/models?sessionId=${sessionId}`);
       const data = await response.json();
       setProviders(data.providers || []);
       setAvailableModels(data.models || []);
@@ -56,7 +56,7 @@ export default function SettingsPanel({ onSaveComplete, onClose }: SettingsPanel
 
   useEffect(() => {
     fetchModelConfig();
-  }, []);
+  }, [sessionId]);
 
   const handleDeepSeekAutoFill = () => {
     setBaseUrls(prev => ({ ...prev, deepseek: 'https://api.deepseek.com' }));
@@ -105,12 +105,20 @@ export default function SettingsPanel({ onSaveComplete, onClose }: SettingsPanel
             payload.api = 'openai-completions';
             payload.models = [
               {
+                id: 'deepseek-v4-pro',
+                name: 'DeepSeek V4 Pro',
+                reasoning: true,
+                input: ['text'],
+                contextWindow: 1000000,
+                maxTokens: 384000
+              },
+              {
                 id: 'deepseek-v4-flash',
-                name: 'deepseek v4-flash',
+                name: 'DeepSeek V4 Flash',
                 reasoning: false,
                 input: ['text'],
-                contextWindow: 128000,
-                maxTokens: 8192
+                contextWindow: 1000000,
+                maxTokens: 384000
               }
             ];
           }
@@ -118,6 +126,38 @@ export default function SettingsPanel({ onSaveComplete, onClose }: SettingsPanel
           if (isQwen) {
             payload.api = 'openai-completions';
             payload.models = [
+              {
+                id: 'qwen3.6-plus',
+                name: 'Qwen3.6 Plus',
+                reasoning: true,
+                input: ['text', 'image'],
+                contextWindow: 1000000,
+                maxTokens: 8192
+              },
+              {
+                id: 'qwen-max-latest',
+                name: 'Qwen Max (Latest)',
+                reasoning: true,
+                input: ['text'],
+                contextWindow: 32768,
+                maxTokens: 8192
+              },
+              {
+                id: 'qwen-plus-latest',
+                name: 'Qwen Plus (Latest)',
+                reasoning: false,
+                input: ['text', 'image'],
+                contextWindow: 131072,
+                maxTokens: 8192
+              },
+              {
+                id: 'qwen-flash',
+                name: 'Qwen Flash',
+                reasoning: false,
+                input: ['text'],
+                contextWindow: 131072,
+                maxTokens: 8192
+              },
               {
                 id: 'qwen3.6-flash-2026-04-16',
                 name: 'Qwen3.6 Flash (2026-04-16)',
@@ -145,27 +185,28 @@ export default function SettingsPanel({ onSaveComplete, onClose }: SettingsPanel
         }
       }
 
-      // Select the active model & thinking level
+      // Select the active model & thinking level for the active session
       const selectResponse = await fetch('http://localhost:3000/api/models/select', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           provider: selectedModelProvider,
           modelId: selectedModelId,
-          thinkingLevel: tempThinkingLevel
+          thinkingLevel: tempThinkingLevel,
+          sessionId
         })
       });
       const selectData = await selectResponse.json();
 
       if (selectData.success) {
-        onSaveComplete(selectData.activeModel, selectData.thinkingLevel);
+        await fetchActiveModelConfig();
         confetti({
           particleCount: 80,
           spread: 60,
           origin: { y: 0.8 },
           colors: ['#00f2fe', '#daff3c', '#ff007f']
         });
-        onClose();
+        setActiveDrawer(null);
       } else {
         alert(`Error selecting model: ${selectData.error}`);
       }
@@ -354,7 +395,7 @@ export default function SettingsPanel({ onSaveComplete, onClose }: SettingsPanel
       >
         <button
           type="button"
-          onClick={onClose}
+          onClick={() => setActiveDrawer(null)}
           className="btn-premium btn-secondary"
           style={{ padding: '10px 20px' }}
         >

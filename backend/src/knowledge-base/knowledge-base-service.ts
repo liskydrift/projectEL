@@ -51,7 +51,22 @@ function parseFrontmatterContent(content: string): { frontmatter: Record<string,
     else if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
     } else if (value.startsWith('[') && value.endsWith(']')) {
-      try { value = JSON.parse(value.replace(/'/g, '"')); } catch { value = []; }
+      try {
+        const inner = value.slice(1, -1).trim();
+        if (inner === '') {
+          value = [];
+        } else {
+          value = inner.split(',').map((s: string) => {
+            s = s.trim();
+            if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+              return s.slice(1, -1);
+            }
+            return s;
+          });
+        }
+      } catch {
+        value = [];
+      }
     }
 
     frontmatter[key] = value;
@@ -114,6 +129,7 @@ export class KnowledgeBaseService {
   readonly archiveDir: string;
   readonly curatedNotesDir: string;
   readonly inboxDir: string;
+  readonly sourcesDir: string;
 
   constructor(workspaceCwd: string) {
     this.wikiRoot = path.join(workspaceCwd, 'wiki_core');
@@ -122,6 +138,7 @@ export class KnowledgeBaseService {
     this.archiveDir = path.join(this.wikiRoot, 'archive');
     this.curatedNotesDir = path.join(workspaceCwd, 'curated_notes');
     this.inboxDir = path.join(workspaceCwd, 'inbox');
+    this.sourcesDir = path.join(workspaceCwd, 'sources');
   }
 
   async ensureDirectories(): Promise<void> {
@@ -130,6 +147,7 @@ export class KnowledgeBaseService {
     await fs.ensureDir(this.archiveDir);
     await fs.ensureDir(this.curatedNotesDir);
     await fs.ensureDir(this.inboxDir);
+    await fs.ensureDir(this.sourcesDir);
   }
 
   // =========================================================================
@@ -616,6 +634,60 @@ export class KnowledgeBaseService {
       return fs.readFile(reviewPath, 'utf-8');
     }
     return null;
+  }
+
+  // =========================================================================
+  // Sources (Layer 1: Immutable Raw Materials)
+  // =========================================================================
+
+  async listSources(): Promise<{ filename: string; title: string; size: number; lastModified: string }[]> {
+    if (!await fs.pathExists(this.sourcesDir)) return [];
+    const files = await fs.readdir(this.sourcesDir);
+    const result: { filename: string; title: string; size: number; lastModified: string }[] = [];
+
+    for (const file of files.sort()) {
+      const filePath = path.join(this.sourcesDir, file);
+      const stat = await fs.stat(filePath);
+      if (!stat.isFile()) continue;
+      const title = file.replace(/\.\w+$/, '').replace(/[-_]/g, ' ');
+      result.push({
+        filename: file,
+        title,
+        size: stat.size,
+        lastModified: stat.mtime.toISOString(),
+      });
+    }
+
+    return result;
+  }
+
+  async getSource(filename: string): Promise<{ content: string; title: string; size: number } | null> {
+    const filePath = path.join(this.sourcesDir, filename);
+    // Prevent directory traversal
+    if (!filePath.startsWith(this.sourcesDir)) return null;
+    if (!await fs.pathExists(filePath)) return null;
+    const stat = await fs.stat(filePath);
+    if (!stat.isFile()) return null;
+
+    const content = await fs.readFile(filePath, 'utf-8');
+    const title = filename.replace(/\.\w+$/, '').replace(/[-_]/g, ' ');
+    return { content, title, size: stat.size };
+  }
+
+  async createSource(filename: string, content: string): Promise<{ filename: string }> {
+    await fs.ensureDir(this.sourcesDir);
+    const filePath = path.join(this.sourcesDir, filename);
+    if (!filePath.startsWith(this.sourcesDir)) throw new Error('Invalid filename');
+    await fs.writeFile(filePath, content, 'utf-8');
+    return { filename };
+  }
+
+  async deleteSource(filename: string): Promise<boolean> {
+    const filePath = path.join(this.sourcesDir, filename);
+    if (!filePath.startsWith(this.sourcesDir)) return false;
+    if (!await fs.pathExists(filePath)) return false;
+    await fs.remove(filePath);
+    return true;
   }
 
   // =========================================================================

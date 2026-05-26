@@ -71,3 +71,11 @@ export interface ArchiveReviewContent {
   candidates: ArchiveCandidate[];
   raw_markdown: string;
 }
+
+export interface SourceFile {
+  filename: string;
+  title: string;
+  content: string;
+  size: number;
+  lastModified: string;
+}

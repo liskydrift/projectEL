@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { Server as SocketServer } from 'socket.io';
 import { KnowledgeBaseService } from './knowledge-base-service.js';
-import type { CreateCardInput, UpdateCardInput, CreateNoteInput, UpdateNoteInput } from './types.js';
+import type { CreateCardInput, UpdateCardInput, CreateNoteInput, UpdateNoteInput, SourceFile } from './types.js';
 
 export function createKnowledgeRoutes(service: KnowledgeBaseService, io: SocketServer): Router {
   const router = Router();
@@ -190,6 +190,54 @@ export function createKnowledgeRoutes(service: KnowledgeBaseService, io: SocketS
       const result = await service.executeArchive(vetoList);
       io.emit('knowledge:archive-done', { moved: result.moved });
       res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // =========================================================================
+  // Sources (Layer 1: Immutable Raw Materials)
+  // =========================================================================
+
+  router.get('/sources', async (_req, res) => {
+    try {
+      const sources = await service.listSources();
+      res.json({ sources });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.get('/sources/:filename', async (req, res) => {
+    try {
+      const source = await service.getSource(req.params.filename);
+      if (!source) return res.status(404).json({ error: 'Source not found' });
+      res.json(source);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post('/sources', async (req, res) => {
+    try {
+      const { filename, content } = req.body;
+      if (!filename || content === undefined) {
+        return res.status(400).json({ error: 'filename and content are required' });
+      }
+      const result = await service.createSource(filename, content);
+      io.emit('knowledge:source-created', { filename });
+      res.status(201).json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.delete('/sources/:filename', async (req, res) => {
+    try {
+      const ok = await service.deleteSource(req.params.filename);
+      if (!ok) return res.status(404).json({ error: 'Source not found' });
+      io.emit('knowledge:source-deleted', { filename: req.params.filename });
+      res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

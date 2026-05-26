@@ -6,12 +6,42 @@ import { compileWorkflowToSkill } from "./compiler.js";
 import { completeSimple } from "@earendil-works/pi-ai";
 
 export default function (pi: ExtensionAPI) {
-  // 监听用户输入事件，用于自动拦截并调用 Qwen 子智能体识图
+  // 注入预设 System Prompt
+  pi.on("before_agent_start", async (event, ctx) => {
+    try {
+      const entries = ctx.sessionManager.getEntries();
+      const presetEntry = entries.find((e: any) => e.type === "custom" && e.customType === "preset");
+      if (!presetEntry) return;
+
+      const presetId = (presetEntry as any).data?.presetId;
+      if (!presetId) return;
+
+      const presetsPath = path.join(ctx.cwd, "skills", "agent-presets.json");
+      if (await fs.pathExists(presetsPath)) {
+        const presets = await fs.readJson(presetsPath);
+        const preset = presets.find((p: any) => p.id === presetId);
+        if (preset && preset.systemPrompt) {
+          return {
+            systemPrompt: `${preset.systemPrompt}\n\n${event.systemPrompt}`
+          };
+        }
+      }
+    } catch (err) {
+      console.error("Preset systemPrompt injection error:", err);
+    }
+  });
+
+  // 监听用户输入事件，用于自动拦截并调用 Qwen 子智能体识图以及注入知识库文档
   pi.on("input", async (event, ctx) => {
-    if (event.images && event.images.length > 0) {
+    let text = event.text;
+    let images = event.images || [];
+    let transformed = false;
+
+    // 1. 识图逻辑 (如果上传了图片，且当前主模型不支持多模态输入)
+    const activeModelSupportsVision = ctx.model?.input?.includes("image");
+    if (images.length > 0 && !activeModelSupportsVision) {
       try {
-        // 1. 寻找可用的识图模型
-        // 优先寻找用户配置的 qwen 识图模型，如果失败，则遍历所有支持 image 且已配置的 model
+        // 寻找可用的识图模型
         let visionModel = ctx.modelRegistry.find("qwen", "qwen3.6-flash-2026-04-16") || 
                             ctx.modelRegistry.find("qwen", "qwen3.6-35b-a3b") || 
                             ctx.modelRegistry.find("qwen", "qwen-vl-max");
@@ -24,7 +54,6 @@ export default function (pi: ExtensionAPI) {
           for (const m of candidateModels) {
             const a = await ctx.modelRegistry.getApiKeyAndHeaders(m);
             if (a.ok) {
-              // 排除在系统环境中存在 Anthropic/Google 代理 key 但 baseUrl 未重定向导致直连报错的情况
               if (m.provider === "anthropic" && a.apiKey?.startsWith("sk-ant-router") && m.baseUrl?.includes("api.anthropic.com")) {
                 continue;
               }
@@ -42,21 +71,19 @@ export default function (pi: ExtensionAPI) {
           throw new Error("模型注册表里找不到任何已配置且有效的识图模型（如 Qwen, Gemini, GPT-4o 等），请在配置面板中添加服务商凭证");
         }
 
-        // 2. 发送识图子智能体正在运行的交互式消息给前端
         pi.sendMessage({
           customType: "subagent-status",
-          content: `🤖 **识图子智能体**：检测到上传 of 图片，正在调用 ${visionModel.name || visionModel.id} 进行图像分析和细节提取...`,
+          content: `🤖 **识图子智能体**：检测到上传图片，正在调用 ${visionModel.name || visionModel.id} 进行图像分析和细节提取...`,
           display: true,
           details: { status: "working", agent: visionModel.provider }
         });
 
-        // 3. 构建子智能体的对话上下文
         const content = [
           { 
             type: "text" as const, 
             text: "请详细描述用户上传的这张或多张图片。你的描述将被传递给另一个主大语言模型（如 DeepSeek），以便它能够根据你的描述准确解答用户的问题。因此，请聚焦于图片的细节、文字、结构、颜色和关键信息，并客观、清晰、结构化地进行描述。" 
           },
-          ...event.images.map(img => ({
+          ...images.map(img => ({
             type: "image" as const,
             data: img.data,
             mimeType: img.mimeType
@@ -69,7 +96,6 @@ export default function (pi: ExtensionAPI) {
           ]
         };
 
-        // 4. 调用识图模型进行推理
         const assistantMessage = await completeSimple(visionModel, context, {
           apiKey: auth.apiKey,
           headers: auth.headers
@@ -85,7 +111,6 @@ export default function (pi: ExtensionAPI) {
           }
         }
 
-        // 如果文本内容为空，尝试回退到 thinking 内容
         if (!description.trim() && thinkingContent.trim()) {
           description = thinkingContent;
         }
@@ -95,7 +120,6 @@ export default function (pi: ExtensionAPI) {
           throw new Error(`${visionModel.name || visionModel.id} 子智能体返回了空的图像描述 [诊断: ${diag}]`);
         }
 
-        // 5. 发送识别成功的交互式消息给前端
         pi.sendMessage({
           customType: "subagent-result",
           content: `🤖 **${visionModel.name || visionModel.id} 识图子智能体**分析完成！\n\n**图片详细描述：**\n${description}`,
@@ -103,21 +127,9 @@ export default function (pi: ExtensionAPI) {
           details: { status: "done", agent: visionModel.provider, result: description }
         });
 
-        // 6. 将分析结果注入到用户原问题中，传给 DeepSeek，同时清除 images 防止 DeepSeek 识图报错
-        const transformedText = `[${visionModel.name || visionModel.id} 图像分析子智能体提供的图片描述]
-${description}
-
----
-
-[用户的原问题]
-${event.text}`;
-
-        return {
-          action: "transform" as const,
-          text: transformedText,
-          images: [] // 清空 images，避免 text-only 的 DeepSeek 报错
-        };
-
+        text = `[${visionModel.name || visionModel.id} 图像分析子智能体提供的图片描述]\n${description}\n\n---\n\n[用户的原问题]\n${text}`;
+        images = []; // 清除图片防止 text-only 模型报错
+        transformed = true;
       } catch (err: any) {
         console.error("Vision subagent error:", err);
         pi.sendMessage({
@@ -127,13 +139,50 @@ ${event.text}`;
           details: { status: "error", agent: "vision", error: err.message }
         });
         
-        // 发生错误时，为了保证流程不中断，我们继续但不附带图片以防止报错
-        return {
-          action: "transform" as const,
-          text: `[识图子智能体运行出错：${err.message || err}]\n\n${event.text}`,
-          images: []
-        };
+        text = `[识图子智能体运行出错：${err.message || err}]\n\n${text}`;
+        images = [];
+        transformed = true;
       }
+    }
+
+    // 2. 注入预设绑定的知识库文档
+    try {
+      const entries = ctx.sessionManager.getEntries();
+      const presetEntry = entries.find((e: any) => e.type === "custom" && e.customType === "preset");
+      if (presetEntry) {
+        const presetId = (presetEntry as any).data?.presetId;
+        if (presetId) {
+          const presetsPath = path.join(ctx.cwd, "skills", "agent-presets.json");
+          if (await fs.pathExists(presetsPath)) {
+            const presets = await fs.readJson(presetsPath);
+            const preset = presets.find((p: any) => p.id === presetId);
+            if (preset && preset.contextDocs && preset.contextDocs.length > 0) {
+              let docsContent = "";
+              for (const doc of preset.contextDocs) {
+                const docPath = path.isAbsolute(doc) ? doc : path.join(ctx.cwd, "wiki_core", doc);
+                if (await fs.pathExists(docPath)) {
+                  const content = await fs.readFile(docPath, "utf8");
+                  docsContent += `\n\n--- 文档: ${path.basename(doc)} ---\n${content}\n`;
+                }
+              }
+              if (docsContent.trim()) {
+                text = `[知识库文档上下文]\n${docsContent.trim()}\n\n---\n\n${text}`;
+                transformed = true;
+              }
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Error reading contextDocs in input event:", err);
+    }
+
+    if (transformed) {
+      return {
+        action: "transform" as const,
+        text,
+        images
+      };
     }
 
     return { action: "continue" as const };
@@ -149,21 +198,17 @@ ${event.text}`;
       workflowData: Type.String({ description: "JSON 格式的工作流节点与边定义（包含 nodes 与 edges 字段）" }),
     }),
     async execute(toolCallId, params, signal, onUpdate, ctx) {
-      // 目标存储 workflow.json 的位置 (在工作区 skills 目录)
       const targetDir = path.resolve(ctx.cwd, "skills", params.skillId);
       const jsonPath = path.join(targetDir, "workflow.json");
 
-      // 1. 确保目录存在并写入 workflow.json
       await fs.ensureDir(targetDir);
       const data = JSON.parse(params.workflowData);
       await fs.outputJson(jsonPath, data, { spaces: 2 });
 
-      // 2. 编译为 SKILL.md 并保存至工作区本地的 .pi/skills/ 目录下
       const skillMDDir = path.resolve(ctx.cwd, ".pi", "skills", params.skillId);
       const skillMDPath = path.join(skillMDDir, "SKILL.md");
       await compileWorkflowToSkill(jsonPath, skillMDPath);
 
-      // 3. 重要：通过发送 followUp 消息让内核执行 `/reload` 重新加载新技能
       pi.sendUserMessage("/reload", { deliverAs: "followUp" });
 
       return {

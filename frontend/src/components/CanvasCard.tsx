@@ -6,11 +6,13 @@ import {
   Background, 
   Handle,
   Position,
-  Node,
-  Edge
+  Node
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Terminal, Sparkles, FileCode, Layers, Save, X } from 'lucide-react';
+import { useCanvas } from '../contexts/CanvasContext';
+import { useWorkspace } from '../contexts/WorkspaceContext';
+import { useChat } from '../contexts/ChatContext';
 
 // Custom React Flow Nodes
 const CustomBashNode = ({ data }: any) => (
@@ -61,31 +63,21 @@ const nodeTypes = {
   write_file: CustomWriteNode
 };
 
-interface CanvasCardProps {
-  nodes: Node[];
-  edges: Edge[];
-  onNodesChange: any;
-  onEdgesChange: any;
-  onConnect: any;
-  onSaveAndCompile: () => void;
-  onClose: () => void;
-  selectedNode: Node | null;
-  setSelectedNode: (node: Node | null) => void;
-  updateSelectedNodeData: (field: string, value: string) => void;
-}
+export default function CanvasCard() {
+  const {
+    nodes,
+    edges,
+    selectedNode,
+    setSelectedNode,
+    onNodesChange,
+    onEdgesChange,
+    onConnect,
+    updateSelectedNodeData,
+    saveAndCompile
+  } = useCanvas();
 
-export default function CanvasCard({
-  nodes,
-  edges,
-  onNodesChange,
-  onEdgesChange,
-  onConnect,
-  onSaveAndCompile,
-  onClose,
-  selectedNode,
-  setSelectedNode,
-  updateSelectedNodeData
-}: CanvasCardProps) {
+  const { toggleCard } = useWorkspace();
+  const { sessionId } = useChat();
 
   const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
     setSelectedNode(node);
@@ -129,14 +121,14 @@ export default function CanvasCard({
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <button 
-            onClick={onSaveAndCompile} 
+            onClick={() => saveAndCompile(sessionId)} 
             className="btn-premium" 
             style={{ padding: '6px 12px', fontSize: '10px', boxShadow: '2px 2px 0px #000000' }}
           >
             <Save size={12} /> 保存编译
           </button>
           <button
-            onClick={onClose}
+            onClick={() => toggleCard('canvas')}
             style={{
               width: '24px',
               height: '24px',
@@ -176,8 +168,8 @@ export default function CanvasCard({
           onNodeClick={onNodeClick}
           fitView
         >
-          <Controls />
           <MiniMap zoomable pannable />
+          <Controls />
           <Background color="#000000" gap={16} size={1} />
         </ReactFlow>
       </div>

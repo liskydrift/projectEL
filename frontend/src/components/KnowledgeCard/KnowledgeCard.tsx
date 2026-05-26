@@ -5,9 +5,9 @@ import ConfidenceBadge from './ConfidenceBadge';
 import WikiDetailView from './WikiDetailView';
 import WikiFormView from './WikiFormView';
 import ArchiveReview from './ArchiveReview';
-import { Search, Plus, Archive, RefreshCw, BookOpen } from 'lucide-react';
+import { Search, Plus, Archive, RefreshCw, BookOpen, FileText } from 'lucide-react';
 
-type View = 'list' | 'detail' | 'form' | 'archive' | 'search';
+type View = 'list' | 'detail' | 'form' | 'archive' | 'search' | 'sources';
 
 export default function KnowledgeCard({ onClose }: { onClose: () => void }) {
   const kb = useKnowledgeBase();
@@ -15,6 +15,8 @@ export default function KnowledgeCard({ onClose }: { onClose: () => void }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<WikiCard[]>([]);
+  const [sources, setSources] = useState<{ filename: string; title: string; size: number; lastModified: string }[]>([]);
+  const [sourceContent, setSourceContent] = useState<{ content: string; title: string } | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => { kb.fetchCards(); }, []);
@@ -128,6 +130,10 @@ export default function KnowledgeCard({ onClose }: { onClose: () => void }) {
             className="btn-premium btn-secondary" style={{ padding: '6px 10px', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
             <Archive size={12} /> 归档
           </button>
+          <button onClick={async () => { const s = await kb.fetchSources(); setSources(s); setView('sources'); }}
+            className="btn-premium btn-secondary" style={{ padding: '6px 10px', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <FileText size={12} /> 源文件
+          </button>
           <button onClick={onClose}
             style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: '4px' }}>
             ✕
@@ -188,6 +194,64 @@ export default function KnowledgeCard({ onClose }: { onClose: () => void }) {
         )}
         {view === 'archive' && (
           <ArchiveReview kb={kb} onBack={() => setView('list')} />
+        )}
+        {view === 'sources' && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+                原始资料（Layer 1）— {sources.length} 个文件
+              </span>
+            </div>
+            {sourceContent ? (
+              <div>
+                <button onClick={() => setSourceContent(null)}
+                  className="btn-premium btn-secondary" style={{ padding: '4px 8px', fontSize: '10px', marginBottom: '10px' }}>
+                  返回列表
+                </button>
+                <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>{sourceContent.title}</h3>
+                <pre style={{
+                  backgroundColor: '#000000', padding: '16px', fontSize: '12px',
+                  fontFamily: 'var(--font-mono)', color: '#cccccc', whiteSpace: 'pre-wrap',
+                  border: '2px solid #222222', maxHeight: '500px', overflow: 'auto'
+                }}>
+                  {sourceContent.content}
+                </pre>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {sources.map(s => (
+                  <div key={s.filename}
+                    onClick={async () => {
+                      const sc = await kb.fetchSource(s.filename);
+                      setSourceContent(sc);
+                    }}
+                    style={{
+                      padding: '10px 14px', backgroundColor: '#111111',
+                      border: '2px solid #222222', cursor: 'pointer',
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = '#222222'; }}
+                  >
+                    <div>
+                      <span style={{ fontSize: '13px', color: '#ffffff', fontWeight: 600 }}>{s.title}</span>
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '8px', fontFamily: 'var(--font-mono)' }}>
+                        {s.filename}
+                      </span>
+                    </div>
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                      {(s.size / 1024).toFixed(1)} KB
+                    </span>
+                  </div>
+                ))}
+                {sources.length === 0 && (
+                  <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)', fontSize: '12px' }}>
+                    sources/ 目录为空。添加原始资料文件以在此处查看。
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

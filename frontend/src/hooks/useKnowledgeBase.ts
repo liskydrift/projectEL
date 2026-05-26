@@ -217,11 +217,25 @@ export function useKnowledgeBase() {
     return apiCall('/stats');
   }, [apiCall]);
 
+  // =========================================================================
+  // Sources (Layer 1: Immutable Raw Materials)
+  // =========================================================================
+
+  const fetchSources = useCallback(async (): Promise<{ filename: string; title: string; size: number; lastModified: string }[]> => {
+    const data = await apiCall<{ sources: { filename: string; title: string; size: number; lastModified: string }[] }>('/sources');
+    return data.sources;
+  }, [apiCall]);
+
+  const fetchSource = useCallback(async (filename: string): Promise<{ content: string; title: string; size: number }> => {
+    return apiCall(`/sources/${encodeURIComponent(filename)}`);
+  }, [apiCall]);
+
   return {
     cards, notes, loading, error,
     fetchCards, fetchCard, createCard, updateCard, deleteCard, boostCard, searchCards,
     fetchNotes, createNote, updateNote, reviewNote,
     runArchiveLint, executeArchive, fetchArchiveReview, fetchArchivedCards,
     fetchStats,
+    fetchSources, fetchSource,
   };
 }

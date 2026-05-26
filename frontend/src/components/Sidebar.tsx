@@ -1,12 +1,9 @@
 import { MessageSquare, Layers, BookOpen, Settings, Cpu } from 'lucide-react';
+import { useWorkspace } from '../contexts/WorkspaceContext';
 
-interface SidebarProps {
-  activeCards: string[];
-  onToggleCard: (cardId: string) => void;
-  onOpenSettings: () => void;
-}
+export default function Sidebar() {
+  const { activeCards, toggleCard, setActiveDrawer } = useWorkspace();
 
-export default function Sidebar({ activeCards, onToggleCard, onOpenSettings }: SidebarProps) {
   const cards = [
     { id: 'chat', label: '聊天', icon: MessageSquare, color: 'var(--secondary)' },
     { id: 'canvas', label: '画布', icon: Layers, color: 'var(--primary)' },
@@ -61,7 +58,7 @@ export default function Sidebar({ activeCards, onToggleCard, onOpenSettings }: S
           return (
             <button
               key={c.id}
-              onClick={() => onToggleCard(c.id)}
+              onClick={() => toggleCard(c.id)}
               style={{
                 width: '46px',
                 height: '46px',
@@ -101,7 +98,7 @@ export default function Sidebar({ activeCards, onToggleCard, onOpenSettings }: S
 
       {/* Bottom Global Settings Toggle */}
       <button
-        onClick={onOpenSettings}
+        onClick={() => setActiveDrawer('settings')}
         style={{
           width: '46px',
           height: '46px',

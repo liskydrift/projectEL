@@ -6,3 +6,15 @@ build/
 .DS_Store
 node_modules
 nul
+
+# Agent session data and test traces (keep directory structure)
+.pi/agent/sessions/*
+!.pi/agent/sessions/.gitkeep
+
+# Wiki database and concepts network (keep directory structure)
+wiki_core/concepts/*
+!wiki_core/concepts/.gitkeep
+wiki_core/temporary/*
+!wiki_core/temporary/.gitkeep
+wiki_core/archive/*
+!wiki_core/archive/.gitkeep

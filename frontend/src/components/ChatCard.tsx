@@ -1,53 +1,38 @@
-import React, { useRef } from 'react';
-import { Terminal, Cpu, Send, Paperclip, XCircle, X, Trash2 } from 'lucide-react';
+import React, { useRef, useEffect } from 'react';
+import { Cpu, Send, Paperclip, XCircle, X, Trash2, Plus } from 'lucide-react';
+import { useChat } from '../contexts/ChatContext';
+import { useWorkspace } from '../contexts/WorkspaceContext';
 
-export interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant' | 'toolResult' | 'system' | 'toolCall' | string;
-  text: string;
-  toolName?: string;
-  args?: any;
-  isError?: boolean;
-  images?: { data: string; mimeType: string }[];
-  customType?: string;
-}
+export default function ChatCard() {
+  const {
+    messages,
+    inputText,
+    setInputText,
+    isStreaming,
+    activeModel,
+    thinkingLevel,
+    selectedImages,
+    sessionId,
+    sessions,
+    presets,
+    activePresetId,
+    sendMessage,
+    abort,
+    clearSession,
+    uploadImage,
+    removeImage,
+    switchSession,
+    createSession,
+    deleteSession
+  } = useChat();
 
-interface ChatCardProps {
-  messages: ChatMessage[];
-  inputText: string;
-  setInputText: (text: string) => void;
-  isStreaming: boolean;
-  activeModel: string;
-  thinkingLevel: string;
-  selectedImages: { data: string; mimeType: string; previewUrl: string }[];
-  onUploadImage: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onRemoveImage: (index: number) => void;
-  onSendMessage: (e: React.FormEvent) => void;
-  onAbort: () => void;
-  onClear?: () => void;
-  onClose: () => void;
-}
+  const { toggleCard } = useWorkspace();
 
-export default function ChatCard({
-  messages,
-  inputText,
-  setInputText,
-  isStreaming,
-  activeModel,
-  thinkingLevel,
-  selectedImages,
-  onUploadImage,
-  onRemoveImage,
-  onSendMessage,
-  onAbort,
-  onClear,
-  onClose
-}: ChatCardProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   // Auto scroll to bottom
-  React.useEffect(() => {
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
@@ -70,28 +55,25 @@ export default function ChatCard({
       <div 
         className="card-drag-header"
         style={{ 
-          padding: '14px 16px', 
+          padding: '12px 16px', 
           borderBottom: '3px solid #222222', 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center',
           backgroundColor: '#000000',
           cursor: 'grab'
         }}
       >
-        <div>
-          <h2 style={{ fontSize: '15px', fontWeight: 900, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', color: '#ffffff' }}>
-            💬 Socrates Learning Console
-          </h2>
-          <div style={{ display: 'flex', gap: '12px', marginTop: '4px', fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-            <span>模型: <strong style={{ color: 'var(--secondary)' }}>{activeModel}</strong></span>
-            <span>思考: <strong style={{ color: 'var(--primary)' }}>{thinkingLevel}</strong></span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h2 style={{ fontSize: '14px', fontWeight: 900, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', color: '#ffffff' }}>
+              💬 Socrates Learning Console
+            </h2>
+            <div style={{ display: 'flex', gap: '12px', marginTop: '4px', fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+              <span>模型: <strong style={{ color: 'var(--secondary)' }}>{activeModel}</strong></span>
+              <span>思考: <strong style={{ color: 'var(--primary)' }}>{thinkingLevel}</strong></span>
+            </div>
           </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {onClear && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <button
-              onClick={onClear}
+              onClick={clearSession}
               disabled={isStreaming}
               style={{
                 width: '24px',
@@ -122,51 +104,144 @@ export default function ChatCard({
             >
               <Trash2 size={14} />
             </button>
-          )}
-          {isStreaming ? (
-            <button 
-              onClick={onAbort} 
-              style={{ 
-                background: 'transparent', 
-                border: 'none', 
-                cursor: 'pointer', 
-                color: 'var(--error)', 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '4px', 
-                fontSize: '11px',
-                fontFamily: 'var(--font-mono)',
-                fontWeight: 'bold'
-              }}
-            >
-              <XCircle size={14} /> 中断
-            </button>
-          ) : (
+            {isStreaming ? (
+              <button 
+                onClick={abort} 
+                style={{ 
+                  background: 'transparent', 
+                  border: 'none', 
+                  cursor: 'pointer', 
+                  color: 'var(--error)', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '4px', 
+                  fontSize: '11px',
+                  fontFamily: 'var(--font-mono)',
+                  fontWeight: 'bold'
+                }}
+              >
+                <XCircle size={14} /> 中断
+              </button>
+            ) : (
+              <button
+                onClick={() => toggleCard('chat')}
+                style={{
+                  width: '24px',
+                  height: '24px',
+                  backgroundColor: '#000000',
+                  border: '2px solid #222222',
+                  color: '#ffffff',
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  cursor: 'pointer',
+                  transition: 'all 0.1s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--error)';
+                  e.currentTarget.style.color = 'var(--error)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = '#222222';
+                  e.currentTarget.style.color = '#ffffff';
+                }}
+                title="隐藏聊天窗口"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Multi-Session & Presets Controls */}
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap' }}>
+          {/* Preset Selector */}
+          <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>预设:</span>
+          <select 
+            value={activePresetId || ''} 
+            onChange={(e) => {
+              const val = e.target.value;
+              createSession(val || undefined);
+            }}
+            style={{
+              backgroundColor: '#000000',
+              border: '2px solid #333333',
+              color: '#ffffff',
+              fontSize: '10px',
+              fontFamily: 'var(--font-mono)',
+              padding: '2px 4px',
+              borderRadius: '0',
+              outline: 'none',
+              cursor: 'pointer'
+            }}
+          >
+            <option value="">(无预设)</option>
+            {presets.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          
+          {/* Session Switcher */}
+          <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>会话:</span>
+          <select 
+            value={sessionId} 
+            onChange={(e) => switchSession(e.target.value)}
+            style={{
+              backgroundColor: '#000000',
+              border: '2px solid #333333',
+              color: '#ffffff',
+              fontSize: '10px',
+              fontFamily: 'var(--font-mono)',
+              padding: '2px 4px',
+              borderRadius: '0',
+              outline: 'none',
+              cursor: 'pointer',
+              maxWidth: '150px'
+            }}
+          >
+            {sessions.map(s => (
+              <option key={s.id} value={s.id}>{s.name || s.id}</option>
+            ))}
+          </select>
+
+          {/* New Session Button */}
+          <button
+            onClick={() => createSession(activePresetId || undefined)}
+            style={{
+              backgroundColor: '#000000',
+              border: '2px solid #333333',
+              color: '#ffffff',
+              fontSize: '10px',
+              fontFamily: 'var(--font-mono)',
+              padding: '2px 6px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '2px',
+              boxShadow: '1px 1px 0px #ffffff'
+            }}
+            title="新建当前预设会话"
+          >
+            <Plus size={10} /> 新建
+          </button>
+
+          {/* Delete Session Button */}
+          {sessions.length > 1 && sessionId !== 'default-session' && (
             <button
-              onClick={onClose}
+              onClick={() => deleteSession(sessionId)}
               style={{
-                width: '24px',
-                height: '24px',
                 backgroundColor: '#000000',
-                border: '2px solid #222222',
-                color: '#ffffff',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
+                border: '2px solid var(--error)',
+                color: 'var(--error)',
+                fontSize: '10px',
+                fontFamily: 'var(--font-mono)',
+                padding: '2px 6px',
                 cursor: 'pointer',
-                transition: 'all 0.1s ease'
+                boxShadow: '1px 1px 0px var(--error)'
               }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = 'var(--error)';
-                e.currentTarget.style.color = 'var(--error)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = '#222222';
-                e.currentTarget.style.color = '#ffffff';
-              }}
-              title="隐藏聊天窗口"
+              title="删除当前会话"
             >
-              <X size={14} />
+              删除
             </button>
           )}
         </div>
@@ -305,7 +380,7 @@ export default function ChatCard({
                 />
                 <button 
                   type="button"
-                  onClick={() => onRemoveImage(idx)}
+                  onClick={() => removeImage(idx)}
                   style={{
                     position: 'absolute',
                     top: '-6px',
@@ -330,11 +405,11 @@ export default function ChatCard({
           </div>
         )}
 
-        <form onSubmit={onSendMessage} style={{ display: 'flex', gap: '8px', width: '100%' }}>
+        <form onSubmit={sendMessage} style={{ display: 'flex', gap: '8px', width: '100%' }}>
           <input 
             type="file" 
             ref={fileInputRef} 
-            onChange={onUploadImage} 
+            onChange={uploadImage} 
             accept="image/*" 
             multiple 
             style={{ display: 'none' }} 
