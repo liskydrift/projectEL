@@ -90,6 +90,16 @@ echo  Tip: Configure missing keys via the Settings panel (gear icon)
 echo  or set env vars: DEEPSEEK_API_KEY, DASHSCOPE_API_KEY, etc.
 echo --------------------------------------------------------------------
 
+:: ===== Check and Download NapCat Binaries =====
+if not exist "%~dp0napcat\node.exe" (
+    echo.
+    echo --------------------------------------------------------------------
+    echo  [WARNING] NapCat binaries are missing.
+    echo  Downloading and installing NapCat Shell (v4.18.4) automatically...
+    echo --------------------------------------------------------------------
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "$zip='%~dp0napcat.zip'; $dest='%~dp0napcat'; Write-Host 'Downloading NapCat binaries from gh-proxy...'; try { Invoke-WebRequest -Uri 'https://gh-proxy.com/https://github.com/NapNeko/NapCatQQ/releases/download/v4.18.4/NapCat.Shell.zip' -OutFile $zip -TimeoutSec 45 -ErrorAction Stop } catch { Write-Host 'Falling back to direct GitHub download...'; Invoke-WebRequest -Uri 'https://github.com/NapNeko/NapCatQQ/releases/download/v4.18.4/NapCat.Shell.zip' -OutFile $zip }; Write-Host 'Extracting files...'; Expand-Archive -Path $zip -DestinationPath $dest -Force; Remove-Item $zip; Write-Host 'NapCat binaries successfully installed!';"
+)
+
 echo.
 echo Starting Backend Express Server (Port 3000)...
 start "projectEL Backend" /D "%~dp0backend" cmd /k "title projectEL Backend Server && npx tsx src/server.ts"

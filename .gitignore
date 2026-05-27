@@ -28,3 +28,8 @@ napcat/*.log
 napcat/napcat/config/napcat_*.json
 napcat/napcat/config/napcat_protocol_*.json
 napcat/napcat/config/onebot11_*.json
+
+# Ignore NapCat large executables, DLLs, and Node native addons
+napcat/**/*.exe
+napcat/**/*.dll
+napcat/**/*.node
