@@ -213,6 +213,25 @@ npm run dev
 # 前端 → http://localhost:5173
 ```
 
+如果前端能打开，但设置面板提示“无法连接后端模型服务”，通常是后端 `3000` 没有成功监听。此时建议使用双终端方式启动，便于分别观察日志：
+
+```bash
+# 终端 1：启动后端
+npm run dev:backend
+# 看到 Server running at http://localhost:3000 后保持该终端运行
+```
+
+```bash
+# 终端 2：启动前端
+npm run dev:frontend
+# 打开 http://localhost:5173
+```
+
+启动后请确认：
+- 后端接口 `http://localhost:3000/api/models?sessionId=default-session` 可以返回模型配置
+- 前端地址 `http://localhost:5173` 可以打开
+- 聊天功能需要后端终端持续运行，仅打开前端页面并不代表 Agent 已连接
+
 Windows 下也可直接双击 `start.bat`，脚本会自动扫描环境变量和 `.pi/auth.json` 中的 API Key 配置状态。
 
 ### 配置 API 密钥与模型

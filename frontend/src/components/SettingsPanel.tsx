@@ -18,18 +18,33 @@ export default function SettingsPanel() {
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const fetchModelConfig = async () => {
     setIsLoading(true);
+    setLoadError(null);
     try {
       const response = await fetch(`http://localhost:3000/api/models?sessionId=${sessionId}`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
       const data = await response.json();
-      setProviders(data.providers || []);
-      setAvailableModels(data.models || []);
+      const nextProviders = data.providers || [];
+      const nextModels = data.models || [];
+      setProviders(nextProviders);
+      setAvailableModels(nextModels);
       
       // Initialize selected dropdowns
-      if (data.activeProvider) setSelectedModelProvider(data.activeProvider);
-      if (data.activeModel) setSelectedModelId(data.activeModel);
+      const nextProvider =
+        data.activeProvider ||
+        (nextProviders.some((p: any) => p.id === selectedModelProvider) ? selectedModelProvider : nextProviders[0]?.id) ||
+        '';
+      const nextModel =
+        (data.activeModel && nextModels.some((m: any) => m.provider === nextProvider && m.id === data.activeModel))
+          ? data.activeModel
+          : (nextModels.find((m: any) => m.provider === nextProvider)?.id || '');
+      setSelectedModelProvider(nextProvider);
+      setSelectedModelId(nextModel);
       if (data.thinkingLevel) setTempThinkingLevel(data.thinkingLevel);
 
       // Initialize API Keys and Base URLs from backend
@@ -49,6 +64,9 @@ export default function SettingsPanel() {
       setShowKeys(visible);
     } catch (err) {
       console.error('Failed to fetch models config:', err);
+      setProviders([]);
+      setAvailableModels([]);
+      setLoadError('无法连接后端模型服务，请确认 localhost:3000 已启动，或查看后端启动日志。');
     } finally {
       setIsLoading(false);
     }
@@ -76,6 +94,18 @@ export default function SettingsPanel() {
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loadError) {
+      alert(loadError);
+      return;
+    }
+    if (!selectedModelProvider) {
+      alert('请先选择模型服务商。');
+      return;
+    }
+    if (!selectedModelId) {
+      alert('请先选择智能体模型。');
+      return;
+    }
     setIsSaving(true);
     try {
       // Save keys and baseUrls for each provider
@@ -225,8 +255,16 @@ export default function SettingsPanel() {
     );
   }
 
+  const selectedProviderModels = availableModels.filter(m => m.provider === selectedModelProvider);
+  const canSave = !loadError && providers.length > 0 && !!selectedModelProvider && !!selectedModelId && !isSaving;
+
   return (
     <form onSubmit={handleSaveSettings} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      {loadError && (
+        <div style={{ border: '2px solid #ff007f', padding: '12px', backgroundColor: '#120008', color: '#ffffff', fontFamily: 'var(--font-mono)', fontSize: '12px', lineHeight: 1.6 }}>
+          {loadError}
+        </div>
+      )}
       
       {/* Active Model Select */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', border: '2px solid #222222', padding: '16px', backgroundColor: '#000000' }}>
@@ -242,11 +280,15 @@ export default function SettingsPanel() {
               const prov = e.target.value;
               setSelectedModelProvider(prov);
               const firstMod = availableModels.find(m => m.provider === prov);
-              if (firstMod) setSelectedModelId(firstMod.id);
+              setSelectedModelId(firstMod?.id || '');
             }}
             className="input-premium"
-            style={{ width: '100%', cursor: 'pointer' }}
+            disabled={!!loadError || providers.length === 0}
+            style={{ width: '100%', cursor: loadError || providers.length === 0 ? 'not-allowed' : 'pointer' }}
           >
+            {providers.length === 0 && (
+              <option value="">未加载到模型服务商</option>
+            )}
             {providers.map(p => (
               <option key={p.id} value={p.id}>{p.name} {p.configured ? '✓' : '(未配置)'}</option>
             ))}
@@ -259,15 +301,15 @@ export default function SettingsPanel() {
             value={selectedModelId}
             onChange={(e) => setSelectedModelId(e.target.value)}
             className="input-premium"
-            style={{ width: '100%', cursor: 'pointer' }}
+            disabled={!!loadError || !selectedModelProvider || selectedProviderModels.length === 0}
+            style={{ width: '100%', cursor: loadError || !selectedModelProvider || selectedProviderModels.length === 0 ? 'not-allowed' : 'pointer' }}
           >
-            {availableModels
-              .filter(m => m.provider === selectedModelProvider)
+            {selectedProviderModels
               .map(m => (
                 <option key={m.id} value={m.id}>{m.name} {m.reasoning ? '(Reasoning)' : ''}</option>
               ))
             }
-            {availableModels.filter(m => m.provider === selectedModelProvider).length === 0 && (
+            {selectedProviderModels.length === 0 && (
               <option value="">(请先在该 Provider 下添加模型)</option>
             )}
           </select>
@@ -279,7 +321,8 @@ export default function SettingsPanel() {
             value={tempThinkingLevel}
             onChange={(e) => setTempThinkingLevel(e.target.value)}
             className="input-premium"
-            style={{ width: '100%', cursor: 'pointer' }}
+            disabled={!!loadError}
+            style={{ width: '100%', cursor: loadError ? 'not-allowed' : 'pointer' }}
           >
             <option value="off">Off (关闭思考，常规响应)</option>
             <option value="minimal">Minimal (极简思考)</option>
@@ -380,6 +423,11 @@ export default function SettingsPanel() {
             </div>
           </div>
         ))}
+        {providers.length === 0 && (
+          <div style={{ border: '2px solid #222222', padding: '16px', backgroundColor: '#000000', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: '12px' }}>
+            暂无可配置的模型服务商。
+          </div>
+        )}
       </div>
 
       {/* Action Buttons */}
@@ -403,9 +451,9 @@ export default function SettingsPanel() {
         </button>
         <button
           type="submit"
-          disabled={isSaving}
+          disabled={!canSave}
           className="btn-premium"
-          style={{ padding: '10px 20px' }}
+          style={{ padding: '10px 20px', cursor: canSave ? 'pointer' : 'not-allowed', opacity: canSave ? 1 : 0.55 }}
         >
           {isSaving ? '保存中...' : '保存并生效'}
         </button>

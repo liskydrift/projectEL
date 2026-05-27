@@ -1,4 +1,3 @@
-import { createAgentSession, SessionManager, DefaultResourceLoader, AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import express from "express";
 import cors from "cors";
 import { createServer } from "http";
@@ -17,6 +16,128 @@ const __dirname = path.dirname(__filename);
 // workspaceCwd 指向 projectEL 的根目录
 const workspaceCwd = path.resolve(__dirname, "../../");
 const PORT = 3000;
+const PI_CODING_AGENT_PACKAGE = "@earendil-works/pi-coding-agent";
+
+const PROVIDER_IDS = ["anthropic", "openai", "google", "deepseek", "qwen", "openrouter"];
+const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  google: "Google",
+  deepseek: "DeepSeek",
+  qwen: "Qwen",
+  openrouter: "OpenRouter"
+};
+const PROVIDER_ENV_KEYS: Record<string, string> = {
+  anthropic: "ANTHROPIC_API_KEY",
+  openai: "OPENAI_API_KEY",
+  google: "GOOGLE_API_KEY",
+  deepseek: "DEEPSEEK_API_KEY",
+  qwen: "DASHSCOPE_API_KEY",
+  openrouter: "OPENROUTER_API_KEY"
+};
+
+function readJsonIfExists(filePath: string, fallback: any) {
+  try {
+    return fs.pathExistsSync(filePath) ? fs.readJsonSync(filePath) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function createFileAuthStorage(authStoragePath: string) {
+  return {
+    set(provider: string, credential: any) {
+      const data = readJsonIfExists(authStoragePath, {});
+      data[provider] = credential;
+      fs.outputJsonSync(authStoragePath, data, { spaces: 2 });
+    },
+    remove(provider: string) {
+      const data = readJsonIfExists(authStoragePath, {});
+      delete data[provider];
+      fs.outputJsonSync(authStoragePath, data, { spaces: 2 });
+    },
+    reload() {
+      // File-backed fallback reads on demand.
+    }
+  };
+}
+
+function createFileModelRegistry(modelsJsonPath: string, authStoragePath: string) {
+  const readModelsConfig = () => readJsonIfExists(modelsJsonPath, { providers: {} });
+  const readAuthConfig = () => readJsonIfExists(authStoragePath, {});
+
+  const getModels = () => {
+    const config = readModelsConfig();
+    return Object.entries(config.providers || {}).flatMap(([provider, providerConfig]: [string, any]) =>
+      (providerConfig.models || []).map((model: any) => ({
+        ...model,
+        provider,
+        baseUrl: providerConfig.baseUrl || ""
+      }))
+    );
+  };
+
+  return {
+    getAll() {
+      return getModels();
+    },
+    find(provider: string, modelId: string) {
+      return getModels().find((model: any) => model.provider === provider && model.id === modelId);
+    },
+    getProviderDisplayName(provider: string) {
+      return PROVIDER_DISPLAY_NAMES[provider] || provider;
+    },
+    getProviderAuthStatus(provider: string) {
+      const authConfig = readAuthConfig();
+      const modelsConfig = readModelsConfig();
+      const providerConfig = modelsConfig.providers?.[provider] || {};
+      const envKey = providerConfig.apiKey || PROVIDER_ENV_KEYS[provider];
+      const hasFileCredential = Boolean(authConfig[provider]?.key || authConfig[provider]?.apiKey);
+      const hasEnvCredential = Boolean(envKey && process.env[envKey]);
+
+      return {
+        configured: hasFileCredential || hasEnvCredential,
+        source: hasEnvCredential ? envKey : hasFileCredential ? "auth.json" : undefined
+      };
+    },
+    refresh() {
+      // File-backed fallback reads on demand.
+    }
+  };
+}
+
+function createDegradedSession(sessionId: string, modelRegistry: any) {
+  let model = modelRegistry.getAll()[0];
+  let thinkingLevel = "off";
+  const sessionManager = {
+    getEntries: () => [],
+    getHeader: () => ({ timestamp: new Date().toISOString() }),
+    getSessionName: () => sessionId,
+    newSession: () => {}
+  };
+
+  return {
+    model,
+    thinkingLevel,
+    messages: [],
+    sessionManager,
+    agent: { state: { messages: [] } },
+    subscribe: () => {},
+    async setModel(nextModel: any) {
+      model = nextModel;
+      this.model = nextModel;
+    },
+    async setThinkingLevel(nextLevel: string) {
+      thinkingLevel = nextLevel;
+      this.thinkingLevel = nextLevel;
+    },
+    async prompt() {
+      throw new Error("Pi Agent SDK is unavailable; chat and workflow reload are disabled until the local SDK is built or installed.");
+    },
+    async abort() {},
+    dispose() {}
+  };
+}
 
 async function startServer() {
   const app = express();
@@ -30,6 +151,14 @@ async function startServer() {
       methods: ["GET", "POST"]
     }
   });
+
+  let piSdk: any = null;
+  try {
+    piSdk = await import(PI_CODING_AGENT_PACKAGE);
+  } catch (err: any) {
+    console.warn("[projectEL] Pi Agent SDK could not be loaded. Running backend in degraded model-config mode.");
+    console.warn(`[projectEL] ${err?.message || err}`);
+  }
 
   // 确保项目本地的技能与扩展工作区目录存在
   await fs.ensureDir(path.join(workspaceCwd, "skills"));
@@ -46,19 +175,23 @@ async function startServer() {
   await fs.copy(compilerSource, compilerDest);
 
   // 初始化 Pi 资源加载器 (加载本地的 skills, prompts, 扩展等)
-  const loader = new DefaultResourceLoader({
+  const loader = piSdk
+    ? new piSdk.DefaultResourceLoader({
     cwd: workspaceCwd,
     agentDir: path.join(workspaceCwd, ".pi", "agent"), // 使用本地的 agentDir
     additionalExtensionPaths: [extDest]
-  });
-  await loader.reload();
+      })
+    : null;
+  if (loader) {
+    await loader.reload();
+  }
 
   // 初始化项目本地的 API key 存储与模型列表
   const authStoragePath = path.join(workspaceCwd, ".pi", "auth.json");
   const modelsJsonPath = path.join(workspaceCwd, ".pi", "models.json");
 
-  const authStorage = AuthStorage.create(authStoragePath);
-  const modelRegistry = ModelRegistry.create(authStorage, modelsJsonPath);
+  const authStorage = piSdk ? piSdk.AuthStorage.create(authStoragePath) : createFileAuthStorage(authStoragePath);
+  const modelRegistry = piSdk ? piSdk.ModelRegistry.create(authStorage, modelsJsonPath) : createFileModelRegistry(modelsJsonPath, authStoragePath);
 
   // 多会话与预设管理器
   const sessions = new Map<string, any>();
@@ -102,17 +235,23 @@ async function startServer() {
       return sessions.get(sessionId)!;
     }
 
+    if (!piSdk || !loader) {
+      const session = createDegradedSession(sessionId, modelRegistry);
+      sessions.set(sessionId, session);
+      return session;
+    }
+
     const sessionDir = path.join(workspaceCwd, ".pi", "agent", "sessions");
     await fs.ensureDir(sessionDir);
 
     const files = await fs.readdir(sessionDir);
     const sessionFile = files.find(f => f.endsWith(`_${sessionId}.jsonl`));
 
-    let sessionManager: SessionManager;
+    let sessionManager: any;
     if (sessionFile) {
-      sessionManager = SessionManager.open(path.join(sessionDir, sessionFile), sessionDir, workspaceCwd);
+      sessionManager = piSdk.SessionManager.open(path.join(sessionDir, sessionFile), sessionDir, workspaceCwd);
     } else {
-      sessionManager = SessionManager.create(workspaceCwd, sessionDir);
+      sessionManager = piSdk.SessionManager.create(workspaceCwd, sessionDir);
       sessionManager.newSession({ id: sessionId });
     }
 
@@ -127,7 +266,7 @@ async function startServer() {
       }
     }
 
-    const { session } = await createAgentSession({
+    const { session } = await piSdk.createAgentSession({
       cwd: workspaceCwd,
       resourceLoader: loader,
       authStorage,
@@ -135,7 +274,7 @@ async function startServer() {
       sessionManager
     });
 
-    session.subscribe((event) => {
+    session.subscribe((event: any) => {
       io.to(sessionId).emit("pi-event", event);
     });
 
@@ -205,13 +344,13 @@ async function startServer() {
     try {
       const sessionDir = path.join(workspaceCwd, ".pi", "agent", "sessions");
       await fs.ensureDir(sessionDir);
-      const list = await SessionManager.list(workspaceCwd, sessionDir);
+      const list = piSdk ? await piSdk.SessionManager.list(workspaceCwd, sessionDir) : [];
 
       const presetsPath = path.join(workspaceCwd, "skills", "agent-presets.json");
       const presets = (await fs.pathExists(presetsPath)) ? await fs.readJson(presetsPath) : [];
 
       const results = await Promise.all(
-        list.map(async (info) => {
+        list.map(async (info: any) => {
           const entries = await loadEntriesFromFile(info.path);
           const presetEntry = entries.find((e: any) => e.type === "custom" && e.customType === "preset");
           const presetId = presetEntry ? presetEntry.data?.presetId : undefined;
@@ -477,14 +616,14 @@ async function startServer() {
     try {
       const s = await getOrCreateSession(sessionId);
       const allModels = modelRegistry.getAll();
-      const providersList = ["anthropic", "openai", "google", "deepseek", "qwen", "openrouter"];
+      const providersList = PROVIDER_IDS;
 
       const providersData = providersList.map((p) => {
         const authStatus = modelRegistry.getProviderAuthStatus(p);
 
         let configuredBaseUrl = "";
         const allRegisteredModels = modelRegistry.getAll();
-        const firstModelOfProvider = allRegisteredModels.find(m => m.provider === p);
+        const firstModelOfProvider = allRegisteredModels.find((m: any) => m.provider === p);
         if (firstModelOfProvider) {
           configuredBaseUrl = firstModelOfProvider.baseUrl;
         }
@@ -498,7 +637,7 @@ async function startServer() {
         };
       });
 
-      const modelsData = allModels.map((m) => ({
+      const modelsData = allModels.map((m: any) => ({
         id: m.id,
         name: m.name,
         provider: m.provider,
