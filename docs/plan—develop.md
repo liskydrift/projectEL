@@ -641,28 +641,89 @@ Supervisor Agent(综合决策 → 最终输出)
 | `frontend/src/components/SubAgentMonitor.tsx` | 新建 — 子代理执行状态可视化 |
 | `frontend/src/components/ChatCard.tsx` | 改造 — 子代理消息专用渲染 |
 
-## Phase 7: QQ Bot 集成
+## Phase 7: QQ Bot 集成 (已完成)
 
-### 7.1 QQ 适配器
+### 7.1 Phase 1 — WebSocket 桥接 + 基础消息回路
 
-新建 `backend/src/qq-adapter.ts`：
+新建 `backend/src/qq-adapter.ts` (~850 行)：
 
-- WebSocket Client 连接 NapCat OneBot v11
-- 心跳检测 + 时延波形
-- 定时 Quiz 推送（Cron 表达式配置）
-- 监听群聊消息，解析选项回复
-- 判定正误 → 更新知识库置信度
+- **QQWebSocketServer**: `noServer: true` 模式 WSS，通过 `httpServer.on('upgrade')` 路由共享 3000 端口，accessToken 校验
+- **QQConnection**: WebSocket 封装，心跳超时检测 (60s)，API 调用 echo 匹配 + 3 次指数退避重试
+- **OneBotMessageHandler**: 滑动窗口限流，@提及/关键词触发，命令路由 (`/quiz`, `/help`, `/stats`)
+- **QQAIService**: Pi Agent 会话桥接，群上下文管理 (最近 20 条消息)，`/quiz` 命令处理
+- **markdownToPlainText()**: Markdown → QQ 纯文本转换 (标题→emoji, 粗体→【】, 列表→数字 emoji)
+- **chunkMessage()**: 段落边界感知的智能分段 (1500 字/段)
+- **sanitizeInput()**: 控制字符过滤 + 8000 字截断
+- **CQ 码解析**: `extractTextFromSegments()`, `extractImagesFromSegments()`
 
-### 7.2 QQ Bot 监控卡片
+### 7.2 Phase 2 — LaTeX 公式渲染 + 内容路由
 
-新建 `frontend/src/components/QQBotMonitorCard.tsx`：
+新建 `backend/src/qq-renderer.ts`：
 
-- 黑色黑客终端风格背景 + 绿色/青色字体
-- 实时日志流：
-  - `[15:01:22] [Quiz Pushed] 二叉树遍历 → A/B/C/D`
-  - `[15:02:10] [User Answered] 张三 → A (正确) 置信度 +0.2`
-  - `[15:03:00] [System] WebSocket 连接握手成功 (延迟: 45ms)`
-- 清屏 / 导出日志按钮
+- **FormulaRenderer**: Puppeteer 浏览器池 (最多 2 个并发页面, 60s 空闲超时, 100 次渲染后重启)
+- 使用 `katex.renderToString()` 服务端渲染 LaTeX → HTML → Puppeteer 截图 → Base64 PNG
+- **ContentRouter**: Track A (纯文本 ≤1500 字) / Track B (含公式 → 渲染为图片 + CQ 码)
+- **detectLatexFormulas()**: `$$...$$` 和 `$...$` 模式检测
+
+### 7.3 Phase 3 — 群聊知识提取
+
+新建 `backend/src/qq-chat-refiner.ts`：
+
+- **ChatRefiner**: 15 条消息阈值 + 5 分钟冷却触发知识提取
+- 发送最近 ~30 条消息给 AI，解析 JSON 概念列表
+- 自动调用 `kbService.createCard()` 创建 wiki 卡片，添加 `[[wikilinks]]`
+
+### 7.4 Phase 4 — 测验系统
+
+新建 `backend/src/qq-quiz-service.ts`：
+
+- AI 根据置信度最低的知识卡片生成选择题
+- SM-2 算法联动：答对提升置信度，答错降低
+- XP 评分 (S: +100, A: +75, B: +50, C: +25, D: +10)
+- 答题日志持久化到 `inbox/checkin_logs.jsonl`
+
+### 7.5 Phase 5 — 运营周报 + 前端监控面板
+
+新建 `backend/src/qq-report-generator.ts` + 修改 `frontend/src/components/QQBotCard.tsx`：
+
+- **ReportGenerator**: 读取 wiki_core/concepts/ + checkin_logs.jsonl，生成高频话题、薄弱知识、排行榜、打卡趋势
+- **QQBotCard**: 5 个可折叠面板 (连接状态 / 答题统计+趋势图 / 活跃排行 / 薄弱知识点 / 热门话题标签云)
+- 30s 自动轮询 + 手动刷新
+- 侧边栏新增 QQ Bot 图标入口
+
+### 7.6 Phase 6 — 生产加固
+
+- **结构化日志器** (`backend/src/qq-logger.ts`): JSONL 格式, 日轮转 (`inbox/qq-logs/qq-YYYY-MM-DD.jsonl`), 5s 缓冲区刷新, 进程退出钩子
+- **API 调用重试**: 指数退避 (1s/2s/4s), 30s 超时
+- **Puppeteer 浏览器池**: 并发限制 + 空闲回收 + 渲染计数重启
+
+### 7.7 WebUI 服务启停按钮
+
+修改 `backend/src/qq-adapter.ts` + `backend/src/server.ts` + `frontend/src/components/QQBotCard.tsx`：
+
+- **QQWebSocketServer.close()**: 移除 `upgrade` 监听器 + 关闭所有 WebSocket + 关闭 WSS
+- **stopQQAdapter()**: 调用 `close()` 并将 `qqServer = null`
+- `POST /api/qq/start`: 初始化适配器 + `child_process.spawn` 通过 PowerShell `Start-Process -Verb runAs` 拉起 NapCat (管理员提权) + 写 `enabled: true`
+- `POST /api/qq/stop`: 关闭适配器 + `taskkill /PID /T /F` 终止进程树 + 写 `enabled: false`
+- **QQBotCard**: 绿色 ▶ 启动按钮 / 红色 ■ 停止按钮,"正在等待 QQ 登录..." 提示横幅
+- 状态端点新增 `running: boolean` 字段
+
+### 7.8 相关文件清单
+
+| 文件 | 操作 | 行数 |
+|------|------|------|
+| `backend/src/qq-adapter.ts` | 新建 | ~850 行 |
+| `backend/src/qq-renderer.ts` | 新建 | ~200 行 |
+| `backend/src/qq-chat-refiner.ts` | 新建 | ~120 行 |
+| `backend/src/qq-quiz-service.ts` | 新建 | ~250 行 |
+| `backend/src/qq-report-generator.ts` | 新建 | ~180 行 |
+| `backend/src/qq-logger.ts` | 新建 | ~140 行 |
+| `backend/src/server.ts` | 修改 | +6 个 QQ 端点 (含 start/stop) |
+| `frontend/src/components/QQBotCard.tsx` | 新建 | ~400 行 |
+| `frontend/src/components/Sidebar.tsx` | 修改 | +1 QQ Bot 入口 |
+| `frontend/src/App.tsx` | 修改 | +1 卡片路由 |
+| `qq-bot-config.json` | 新建 | 运行时配置 |
+| `skills/agent-presets.json` | 修改 | +1 qq-tutor 预设 |
 
 ---
 

@@ -6,6 +6,7 @@ import SettingsPanel from './components/SettingsPanel';
 import ChatCard from './components/ChatCard';
 import CanvasCard from './components/CanvasCard';
 import KnowledgeCard from './components/KnowledgeCard/KnowledgeCard';
+import QQBotCard from './components/QQBotCard';
 
 import { ChatProvider } from './contexts/ChatContext';
 import { WorkspaceProvider, useWorkspace } from './contexts/WorkspaceContext';
@@ -22,6 +23,8 @@ function MainLayout() {
         return <CanvasCard />;
       case 'knowledge':
         return <KnowledgeCard onClose={onClose} />;
+      case 'qqbot':
+        return <QQBotCard />;
       default:
         return null;
     }

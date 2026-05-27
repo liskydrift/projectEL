@@ -99,8 +99,9 @@ start "projectEL Frontend" /D "%~dp0frontend" cmd /k "title projectEL Frontend P
 
 echo.
 echo ====================================================================
-echo  [SUCCESS] Both services launched!
-echo  - Frontend Web UI:  http://localhost:5173
-echo  - Backend API:      http://localhost:3000
+echo  [SUCCESS] All services launched!
+echo  - Frontend Web UI:   http://localhost:5173
+echo  - Backend API:       http://localhost:3000
+echo  - QQ WS (NapCat):    ws://127.0.0.1:3001/qq/ws
 echo ====================================================================
 pause

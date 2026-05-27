@@ -21,6 +21,12 @@ projectEL/
 │       ├── server.ts                 # WebSocket/HTTP 网关，多会话管理、Pi Session 生命周期
 │       ├── compiler.ts               # 工作流 JSON → SKILL.md 编译器 (拓扑排序)
 │       ├── study-agent-extension.ts  # Pi Agent 扩展：预设 System Prompt 注入、Qwen 识图拦截器、write_workflow 工具
+│       ├── qq-adapter.ts             # QQ Bot 核心适配器 (OneBot v11 WS 服务端、AI 桥接、限流)
+│       ├── qq-renderer.ts            # Puppeteer 浏览器池 + KaTeX 公式渲染
+│       ├── qq-chat-refiner.ts        # 群聊知识提取 → 自动创建 wiki 卡片
+│       ├── qq-quiz-service.ts        # AI 出题测验系统 (XP 评分 + SM-2 置信度联动)
+│       ├── qq-report-generator.ts    # 运营周报生成器 (热门话题/薄弱知识/活跃排行)
+│       ├── qq-logger.ts              # 结构化 JSONL 日志器 (日轮转 + 缓冲区刷新)
 │       └── knowledge-base/           # 知识库后端模块
 │           ├── types.ts              # Wiki 卡片 / 笔记 / 归档类型定义
 │           ├── knowledge-base-service.ts  # 核心服务 (CRUD / 指数衰减 / SM-2 / 归档 Veto)
@@ -44,7 +50,8 @@ projectEL/
 │       │   ├── Sidebar.tsx           # 侧边导航栏 (卡片切换 / 会话管理 / 预设选择)
 │       │   ├── Workspace.tsx         # 多卡片工作区 (拖拽分栏 / 大小调整)
 │       │   ├── SlideDrawer.tsx       # 全局滑出抽屉
-│       │   └── SettingsPanel.tsx     # 模型与 API 凭证配置面板
+│       │   ├── SettingsPanel.tsx     # 模型与 API 凭证配置面板
+│       │   └── QQBotCard.tsx         # QQ Bot 监控面板 (启停控制 + 统计 + 排行榜)
 │       └── hooks/
 │           └── useKnowledgeBase.ts   # 知识库 API 请求 Hook
 ├── wiki_core/                        # Layer 3: LLM 动态知识网 (Markdown)
@@ -67,11 +74,18 @@ projectEL/
 │   ├── agent/sessions/               # 会话持久化 (JSONL)
 │   ├── auth.json                     # API 密钥持久化存储
 │   └── models.json                   # 模型注册表 & Provider 配置
+├── napcat/                            # NapCat QQ 框架 (OneBot v11 客户端)
+│   └── napcat/
+│       ├── napcat.mjs                 # NapCat 单体入口 (4.3MB)
+│       ├── launcher.bat               # Windows 管理员提权启动脚本
+│       └── config/                    # OneBot v11 连接配置 + WebUI 配置
+├── qq-bot-config.json                # QQ Bot 运行时配置 (关键词/限流/渲染/测验)
 ├── docs/                             # 设计文档
 │   ├── plan—develop.md               # 开发进度与规划
 │   ├── webui.md                      # WebUI 设计规范
 │   ├── knowledge_base_architecture_v2.md  # 知识库架构白皮书
-│   └── learning_agent_architecture.md     # 智能体编排架构
+│   ├── qq_bot_development_proposal.md     # QQ Bot 开发提案
+│   └── developer_guide.md            # 开发者指南
 ├── start.bat                         # Windows 一键启动脚本
 ├── package.json                      # 根配置与 workspaces
 └── tsconfig.base.json                # 共享 TypeScript 配置
@@ -89,7 +103,8 @@ App.tsx
                       ├─ Workspace     (多卡片拖拽容器)
                       │   ├─ ChatCard
                       │   ├─ CanvasCard
-                      │   └─ KnowledgeCard
+                      │   ├─ KnowledgeCard
+                      │   └─ QQBotCard
                       └─ SlideDrawer   (SettingsPanel)
 ```
 
@@ -179,7 +194,146 @@ graph TD
 | | 归档审查 (Lint + Veto + 链接重写) | ✅ 已完成 | `ArchiveReview.tsx` |
 | | REST API + Socket.io 实时同步 | ✅ 已完成 | `knowledge-routes.ts` |
 | | 置信度徽章 (绿/黄/红/灰) | ✅ 已完成 | `ConfidenceBadge.tsx` |
-| **QQ Bot** | NapCat QQ 框架适配 | ❌ 待开发 | — |
+| **QQ Bot** | NapCat WebSocket 桥接 + AI 消息处理 | ✅ 已完成 | `qq-adapter.ts` |
+| | Markdown→QQ 纯文本转换 | ✅ 已完成 | `qq-adapter.ts` |
+| | LaTeX 公式渲染 (Puppeteer + KaTeX) | ✅ 已完成 | `qq-renderer.ts` |
+| | 群聊知识提取 → 知识库卡片 | ✅ 已完成 | `qq-chat-refiner.ts` |
+| | 测验系统 (AI 出题 + XP 评分) | ✅ 已完成 | `qq-quiz-service.ts` |
+| | 运营周报 + 薄弱知识点分析 | ✅ 已完成 | `qq-report-generator.ts` |
+| | 结构化日志 + 日常轮转 | ✅ 已完成 | `qq-logger.ts` |
+| | WebUI 服务启停按钮 + 进程管理 | ✅ 已完成 | `QQBotCard.tsx`, `server.ts` |
+
+---
+
+## QQ Bot 集成
+
+projectEL 通过 **NapCatQQ 框架**（独立模式）实现 QQ 群聊 AI 回复、自动知识提取、测验系统与运营周报。
+
+### 架构
+
+```
+NapCatQQ (独立模式, 内嵌 Node.js)
+  └─ OneBot v11 WebSocket Client
+       └─ ws://127.0.0.1:3001/qq/ws
+            └─ QQWebSocketServer (backend, port 3001)
+                 ├─ QQConnection       心跳检测 + API 调用重试
+                 ├─ OneBotMessageHandler  限流 + 触发词过滤 + 命令路由
+                 └─ QQAIService        Pi Agent AI 桥接
+                      ├─ ChatRefiner      → 群聊知识提取 → wiki_core/
+                      ├─ QuizService      → AI 出题测验 → checkin_logs.jsonl
+                      ├─ ContentRouter    → Puppeteer KaTeX 公式渲染
+                      └─ ReportGenerator  → 运营周报
+```
+
+### 端口分配
+
+| 服务 | 端口 |
+|------|------|
+| 后端 API（Express + Socket.io） | 3000 |
+| QQ WebSocket（NapCat 连接） | 3001 |
+| 前端 Vite | 5173 |
+| NapCat WebUI | 6099 |
+
+### 配置
+
+`qq-bot-config.json` 控制运行参数：
+
+| 字段 | 说明 | 默认值 |
+|------|------|--------|
+| `enabled` | 是否随服务启动 | `false` |
+| `wsPath` | WebSocket 路径 | `/qq/ws` |
+| `accessToken` | 接入令牌（留空不校验） | `""` |
+| `dedicatedPresetId` | 绑定的 AI 预设 | `"qq-tutor"` |
+| `maxGroupContextMessages` | 群聊上下文消息数 | `20` |
+| `rateLimit.maxMessages` | 限流窗口内最大消息数 | `5` |
+| `rateLimit.windowSeconds` | 限流窗口（秒） | `10` |
+| `triggerKeywords` | 触发 AI 的关键词 | `["@bot", "/ai", "/ask"]` |
+| `quiz.enabled` | 启用测验功能 | `true` |
+| `quiz.questionsPerRound` | 每轮题目数 | `3` |
+| `quiz.xpPerGrade` | 评分→XP 映射 | `{"0":0,"1":1,"2":3,"3":5,"4":10}` |
+| `rendering.formulaImageWidth` | 公式渲染宽度 (px) | `800` |
+| `rendering.maxMessageLength` | 单条消息最大字数 | `1500` |
+| `rendering.messageChunkOverlap` | 长消息分块重叠字数 | `100` |
+| `groupSync.enabled` | 群聊同步 | `true` |
+| `groupSync.allowedGroupIds` | 允许的群号列表（空=所有群） | `[]` |
+
+### 使用步骤
+
+1. 配置 `qq-bot-config.json`（至少确认 `enabled: true` 和正确的 `triggerKeywords`）
+2. 启动 projectEL 后端服务（`npm run dev` 或 `start.bat`）
+3. 打开 WebUI，点击侧边栏 **QQ Bot** 图标
+4. 在卡片页头点击 **▶ 启动** 按钮
+5. 系统调用 NapCatQQ 推荐的官方入口 `napcat.bat`（**独立模式**：内嵌 Node.js，**无需 QQ.exe、管理员权限或 DLL 注入**）
+6. 在弹出的 NapCat 命令行窗口中扫码登录 QQ
+7. 登录成功后，卡片显示 **QQ xxx 在线**，Bot 开始响应群聊消息
+
+### 群聊触发方式
+
+| 方式 | 行为 |
+|------|------|
+| `@Bot` + 提问 | AI 使用 Pi Agent 智能回复（Markdown → QQ 纯文本，公式自动渲染为图片） |
+| `/ai <问题>` | 同上（不 @Bot 也可触发，需配置在 `triggerKeywords` 中） |
+| `/ask <问题>` | 同上 |
+| 自然群聊 ≥ 15 条消息 | 后台自动提取知识 → 创建 wiki 卡片到知识库 |
+
+### QQ 群聊命令
+
+所有命令以 `/` 开头，在群聊中发送即可：
+
+#### 测验系统 (`/quiz`)
+
+| 命令 | 说明 |
+|------|------|
+| `/quiz start` | 开始一轮 AI 出题测验（默认 3 题，30 秒答题窗口） |
+| `/quiz stop` | 提前终止当前测验 |
+| `/quiz stats` | 查看本群测验统计数据（总答题次数、正确率等） |
+
+#### 个人统计 (`/stats`)
+
+| 命令 | 说明 |
+|------|------|
+| `/stats` | 查看个人在本群的测验成绩（XP 总分、正确数/总题数、准确率） |
+
+#### 帮助 (`/help`)
+
+| 命令 | 说明 |
+|------|------|
+| `/help` | 显示所有可用命令列表 |
+
+#### 评分标准
+
+测验答题按正确性结合置信度评分：
+
+| Grade | 说明 | XP |
+|:-----:|------|:--:|
+| 0 | 完全错误 | 0 |
+| 1 | 接近但错误 | 1 |
+| 2 | 基本正确 | 3 |
+| 3 | 完全正确 | 5 |
+| 4 | 完美答案 | 10 |
+
+### API 端点
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/qq/status` | 连接状态 + 在线账号列表 |
+| GET | `/api/qq/health` | 健康检查（在线数 / 运行时长） |
+| POST | `/api/qq/start` | 启动 QQ 服务（初始化 WebSocket 适配器 + 拉起 napcat.bat） |
+| POST | `/api/qq/stop` | 停止 QQ 服务（关闭适配器 + 终止 NapCat 进程） |
+| GET | `/api/qq/report/weekly` | 运营周报（热门话题 / 薄弱知识 / 排行榜 / 趋势） |
+| GET | `/api/qq/report/weekly/text` | 运营周报 QQ 纯文本格式（可直接发到群聊） |
+
+### WebUI 监控面板
+
+前端 `QQBotCard` 提供实时监控：
+
+| 面板 | 内容 |
+|------|------|
+| **连接状态** | 各 QQ 账号在线/离线状态 + 昵称 |
+| **答题统计** | 总答题次数 + 每日趋势迷你柱状图 |
+| **活跃排行** | Top 5 用户 XP 排行榜 + 正确率 |
+| **薄弱知识点** | AI 分析置信度最低的知识卡片 |
+| **热门话题** | 群聊高频讨论标签云 |
 
 ---
 
@@ -301,6 +455,17 @@ Windows 下也可直接双击 `start.bat`，脚本会自动扫描环境变量和
 | POST | `/api/knowledge/archive/execute` | 执行归档 |
 | GET | `/api/knowledge/stats` | 统计数据 |
 
+### QQ Bot 服务 (QQ Bot Service)
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/qq/status` | 连接状态 (在线账号 / 运行状态) |
+| GET | `/api/qq/report/weekly` | 运营周报 (热门话题 / 薄弱知识 / 排行榜) |
+| GET | `/api/qq/report/weekly/text` | 运营周报 QQ 纯文本格式 |
+| GET | `/api/qq/health` | 健康检查 (在线数 / 运行时长) |
+| POST | `/api/qq/start` | 启动 QQ 服务 (初始化适配器 + 拉起 NapCat 进程) |
+| POST | `/api/qq/stop` | 停止 QQ 服务 (关闭适配器 + 终止 NapCat 进程) |
+
 ### WebSocket 事件 (Socket.io)
 
 客户端通过 Socket.io 连接 `http://localhost:3000` 进行实时双向通信：
@@ -363,4 +528,8 @@ Windows 下也可直接双击 `start.bat`，脚本会自动扫描环境变量和
 
 ## Roadmap
 
-- [ ] **QQ Bot 适配**: NapCat QQ 框架 WebSocket 连接，支持 Quiz 卡片推送与答题反馈
+- [x] **QQ Bot 适配**: NapCat QQ 框架 WebSocket 桥接，AI 智能回复，Quiz 测验推送与答题反馈
+- [x] **WebUI QQ 服务启停**: 前端一键启动/停止 NapCat 进程，扫码登录状态提示
+- [ ] **视觉重构**: Neo-Brutalist → Apple Glassmorphism (CSS 变量体系 + 弥散流光背景)
+- [ ] **2D 知识图谱**: 粒子力导向拓扑网络渲染 `[[双链]]` 关系
+- [ ] **子代理编排**: Sub-Agent 抽象层 (Chain/Parallel/Supervisor/Router)

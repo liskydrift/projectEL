@@ -1,0 +1,37 @@
+{
+  "enabled": true,
+  "qqPath": "",
+  "wsPath": "/qq/ws",
+  "accessToken": "",
+  "dedicatedPresetId": "qq-tutor",
+  "maxGroupContextMessages": 20,
+  "rateLimit": {
+    "maxMessages": 5,
+    "windowSeconds": 10
+  },
+  "triggerKeywords": [
+    "@bot",
+    "/ai",
+    "/ask"
+  ],
+  "quiz": {
+    "enabled": true,
+    "questionsPerRound": 3,
+    "xpPerGrade": {
+      "0": 0,
+      "1": 1,
+      "2": 3,
+      "3": 5,
+      "4": 10
+    }
+  },
+  "rendering": {
+    "formulaImageWidth": 800,
+    "maxMessageLength": 1500,
+    "messageChunkOverlap": 100
+  },
+  "groupSync": {
+    "enabled": true,
+    "allowedGroupIds": []
+  }
+}

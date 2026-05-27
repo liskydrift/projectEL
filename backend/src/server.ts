@@ -7,9 +7,12 @@ import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs-extra";
 import { randomUUID } from "crypto";
+import { spawn, type ChildProcess } from "child_process";
 import { compileWorkflowToSkill } from "./compiler.js";
 import { KnowledgeBaseService } from "./knowledge-base/knowledge-base-service.js";
 import { createKnowledgeRoutes } from "./knowledge-base/knowledge-routes.js";
+import { getQQServer, initQQAdapter, stopQQAdapter } from "./qq-adapter.js";
+import { ReportGenerator } from "./qq-report-generator.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -148,21 +151,27 @@ async function startServer() {
         if (preset && preset.modelConfig) {
           const { provider, modelId, thinkingLevel } = preset.modelConfig;
           let model = modelRegistry.find(provider, modelId);
-          
+
           // 检查该模型是否已配置凭证，否则采用已配置的可用模型作为保底
           let isConfigured = false;
           if (model) {
             const authStatus = modelRegistry.getProviderAuthStatus(model.provider);
             isConfigured = authStatus.configured || !!authStatus.source;
+            console.log(`[Session Preset] Model ${provider}/${modelId} configured:`, isConfigured, 'authStatus:', JSON.stringify(authStatus));
+          } else {
+            console.log(`[Session Preset] Model ${provider}/${modelId} not found in registry`);
           }
-          
+
           if (!model || !isConfigured) {
+            const previousModel = model;
             model = getConfiguredFallbackModel();
+            console.log(`[Session Preset] Falling back from ${previousModel?.provider}/${previousModel?.id} to ${model?.provider}/${model?.id}`);
           }
 
           if (model) {
             try {
               await session.setModel(model);
+              console.log(`[Session Preset] setModel succeeded: ${model.provider}/${model.id}, session.model now: ${session.model?.provider}/${session.model?.id}`);
             } catch (err) {
               console.error(`Failed to set model ${model.provider}/${model.id} for preset:`, err);
             }
@@ -184,6 +193,27 @@ async function startServer() {
       }
     }
 
+    // 检查该会话当前模型是否已配置凭证，否则采用已配置的可用模型作为保底
+    if (session.model) {
+      const authStatus = modelRegistry.getProviderAuthStatus(session.model.provider);
+      const isConfigured = authStatus.configured || !!authStatus.source;
+      console.log(`[Session FinalCheck] session.model=${session.model.provider}/${session.model.id}, configured=${isConfigured}, authStatus:`, JSON.stringify(authStatus));
+      if (!isConfigured) {
+        const fallback = getConfiguredFallbackModel();
+        console.log(`[Session FinalCheck] Falling back to ${fallback?.provider}/${fallback?.id}`);
+        if (fallback) {
+          try {
+            await session.setModel(fallback);
+            console.log(`[Session FinalCheck] setModel succeeded: ${fallback.provider}/${fallback.id}, session.model now: ${session.model?.provider}/${session.model?.id}`);
+          } catch (err) {
+            console.error(`Failed to set fallback model for session ${sessionId}:`, err);
+          }
+        }
+      }
+    } else {
+      console.log(`[Session FinalCheck] session has no model`);
+    }
+
     sessions.set(sessionId, session);
     return session;
   }
@@ -197,6 +227,133 @@ async function startServer() {
   await kbService.ensureDirectories();
   const kbRouter = createKnowledgeRoutes(kbService, io);
   app.use('/api/knowledge', kbRouter);
+
+  // ── QQ Bot ──────────────────────────────────────────────────────────
+  let napcatProcess: ChildProcess | null = null;
+  let qqConfig: any = null;
+  const qqConfigPath = path.join(workspaceCwd, 'qq-bot-config.json');
+
+  if (await fs.pathExists(qqConfigPath)) {
+    qqConfig = await fs.readJson(qqConfigPath);
+    if (qqConfig.enabled) {
+      initQQAdapter(httpServer, getOrCreateSession, io, qqConfig, kbService, workspaceCwd);
+      console.log('[QQ] Config loaded and adapter auto-started');
+    } else {
+      console.log('[QQ] Config loaded (disabled, adapter not auto-started)');
+    }
+  }
+
+  const reportGen = new ReportGenerator(kbService, workspaceCwd);
+
+  // QQ 状态（始终可用）
+  app.get('/api/qq/status', (_req, res) => {
+    const server = getQQServer();
+    if (!server) {
+      return res.json({ initialized: false, running: false, accounts: [] });
+    }
+    res.json({ initialized: true, running: true, ...server.getStatus() });
+  });
+
+  // 健康检查
+  app.get('/api/qq/health', (_req, res) => {
+    const server = getQQServer();
+    const status = server ? server.getStatus() : { accounts: [] };
+    const online = status.accounts.some((a: any) => a.online);
+    res.json({
+      status: online ? 'healthy' : 'degraded',
+      accounts: status.accounts.length,
+      online: status.accounts.filter((a: any) => a.online).length,
+      uptime: process.uptime(),
+    });
+  });
+
+  // 启动 QQ 服务
+  app.post('/api/qq/start', async (_req, res) => {
+    try {
+      if (getQQServer()) {
+        return res.json({ success: true, message: 'QQ 服务已在运行中' });
+      }
+
+      if (!qqConfig) {
+        return res.status(400).json({ success: false, error: '未找到 qq-bot-config.json 配置文件' });
+      }
+
+      // 初始化 QQ WebSocket 适配器（监听端口 3001）
+      initQQAdapter(httpServer, getOrCreateSession, io, qqConfig, kbService, workspaceCwd);
+
+      // 使用 napcat.bat（NapCatQQ 官方推荐的独立模式，无需 QQ.exe 和管理员权限）
+      const napcatBatPath = path.join(workspaceCwd, 'napcat', 'napcat.bat');
+      if (!(await fs.pathExists(napcatBatPath))) {
+        return res.status(400).json({ success: false, error: '未找到 napcat.bat' });
+      }
+
+      const napcatDir = path.dirname(napcatBatPath);
+      napcatProcess = spawn('napcat.bat', [], {
+        cwd: napcatDir,
+        shell: true,
+        detached: true,
+        stdio: 'ignore',
+      });
+      napcatProcess.unref();
+      console.log('[QQ] NapCat spawned via napcat.bat (standalone mode)');
+
+      // 写配置 enabled: true
+      qqConfig.enabled = true;
+      await fs.writeJson(qqConfigPath, qqConfig, { spaces: 2 });
+
+      res.json({ success: true, message: 'QQ 服务已启动' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // 停止 QQ 服务
+  app.post('/api/qq/stop', async (_req, res) => {
+    try {
+      stopQQAdapter();
+
+      if (napcatProcess) {
+        try {
+          spawn('taskkill', ['/PID', String(napcatProcess.pid), '/T', '/F'], { stdio: 'ignore' });
+        } catch {
+          // 忽略 kill 错误
+        }
+        napcatProcess = null;
+      }
+
+      // 写配置 enabled: false
+      if (qqConfig) {
+        qqConfig.enabled = false;
+        await fs.writeJson(qqConfigPath, qqConfig, { spaces: 2 });
+      }
+
+      res.json({ success: true, message: 'QQ 服务已停止' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // 运营周报
+  app.get('/api/qq/report/weekly', async (req, res) => {
+    try {
+      const groupId = req.query.groupId ? parseInt(req.query.groupId as string) : undefined;
+      const report = await reportGen.generateWeeklyReport(groupId);
+      res.json(report);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 运营周报 QQ 纯文本格式
+  app.get('/api/qq/report/weekly/text', async (req, res) => {
+    try {
+      const groupId = req.query.groupId ? parseInt(req.query.groupId as string) : undefined;
+      const report = await reportGen.generateWeeklyReport(groupId);
+      res.type('text/plain').send(reportGen.formatReportForQQ(report, groupId));
+    } catch (err: any) {
+      res.status(500).send(err.message);
+    }
+  });
 
   // ----------------- HTTP 会话路由 -----------------
 

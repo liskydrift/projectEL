@@ -18,3 +18,13 @@ wiki_core/temporary/*
 !wiki_core/temporary/.gitkeep
 wiki_core/archive/*
 !wiki_core/archive/.gitkeep
+
+# QQ Bot Logger output
+inbox/qq-logs/
+
+# NapCat QQ Bot runtime caches, databases, logs, and account-specific settings
+napcat/*.db*
+napcat/*.log
+napcat/napcat/config/napcat_*.json
+napcat/napcat/config/napcat_protocol_*.json
+napcat/napcat/config/onebot11_*.json

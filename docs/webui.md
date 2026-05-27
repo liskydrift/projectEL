@@ -132,23 +132,20 @@
     - 提供重写前后的 Diff 对比预览（例如：`[[数据结构]]` ➔ `**数据结构[已归档]**`），以便用户直观评估其对关联知识上下文的影响。
     - 用户一键点击“确认执行重写并归档”后，后端将完成双链的物理重写与文件的物理移位，并在前端同步更新图谱关系网。
   - **快捷审批操作**: 支持一键修改该概念 Frontmatter 为 `lifecycle: immortal`（Veto 否决归档，永久保留）；或确认允许物理归档并降级相关链接。
-* **QQ Bot (NapCat OneBotv11) 监控器**:
-  - **连线质量**: 展示与 NapCat 框架连接的实时心跳时延波形图（实时刷新）。
-  - **绑定控制**: 可通过 Web 端直接开启/关闭自动 Quiz 推送，配置推送时间 Cron 表达式。
-
-### 2.4.1 📄 QQ Bot 实时交互监控卡片 (QQBotMonitorCard) —— 机器人动态终端 [新]
-* **常驻终端卡片**: 作为一个可从全局侧边栏独立唤出/排列的 Workspace 卡片，用于对 OneBot 机器人的交互行为进行全景监控。
-* **交互动态 Terminal 日志**:
-  - 采用黑色底背景、绿色/青色字体（经典黑客终端风）渲染无感滚动的实时数据流日志。
-  - **记录类型**:
-    - **Quiz 发送事件**: 记录推送的问题文本、选项以及派发时间（如：`[15:01:22] [Quiz Pushed] 知识点: [[二叉树遍历]], 选项: A/B/C/D`）。
-    - **答题接收事件**: 记录用户的 QQ 昵称、选择的答案、正确性以及置信度扣减/奖励变化（如：`[15:02:10] [User Answered] QQ用户: 张三, 回复: A (正确) -> 提升置信度 +0.2`）。
-    - **系统连接日志**: 记录 WebSocket 连接握手、时延突变与心跳重连状况。
-* **清屏与导出**: 终端顶部配备“清屏”(Clear) 与“导出日志”(Export) 苹果磨砂微控制按钮。
+* **QQ Bot (NapCat OneBotv11) 监控面板 (QQBotCard)** — ✅ 已实现:
+  - **服务启停控制**: 卡片页头提供绿色 `▶ 启动` / 红色 `■ 停止` 按钮，一键拉起/关闭 NapCat QQ 服务。启动时通过 PowerShell 管理员提权执行 `launcher.bat`，二维码显示在 NapCat 自带的命令行窗口中，用户扫码后自动连接。
+  - **等待状态提示**: 适配器运行但尚无 QQ 账号连接时，显示 “正在等待 QQ 登录...请在弹出的 NapCat 命令行窗口中扫码” 绿色提示横幅。
+  - **连接状态面板**: 实时显示各 QQ 账号 (selfId + 昵称) 的在线/离线状态，在线账号旁显示绿色圆点。
+  - **答题统计面板**: 展示知识库卡片总数、近期答题次数，内嵌每日答题趋势迷你柱状图 (TrendMiniChart)。
+  - **活跃排行榜**: Top 5 用户 XP 排行 (🥇🥈🥉 奖牌图标)，显示总 XP 与正确率百分比。
+  - **薄弱知识点面板**: AI 分析置信度最低的知识卡片列表，显示卡片标题 + 当前置信度。
+  - **热门话题面板**: 高频讨论标签云，以标签 pill 形式展示 (话题名 + 出现次数)。
+  - **自动刷新**: 30 秒轮询 + 手动刷新按钮，底部状态栏显示更新时间。
+* **视觉风格**: 保持 Neo-Brutalist 暗黑主题 (黑底 + 2px 硬边框 + 硬阴影)，与 WebUI 现有风格统一。未来可升级为 Glassmorphism。
 
 ### 2.5 🧭 全局导航侧栏 (Sidebar) —— 卡片控制中枢 [已确认]
 * **卡片导航项映射**:
-  - 提供四大核心视图的开关切换项（包括：MessageSquare 💬 聊天卡片、Layers ⚙️ 编排画布卡片、BookOpen 📚 知识图谱卡片、Sliders 🔧 参数控制卡片 [新]）。
+  - 提供五大核心视图的开关切换项（包括：MessageSquare 💬 聊天卡片、Layers ⚙️ 编排画布卡片、BookOpen 📚 知识库卡片、Bot 🤖 QQ Bot 监控卡片、Settings ⚙️ 全局配置）。
   - 点击开关在全局 Workspace 容器中添加/隐藏该卡片，支持用户通过拖拽分割线自定义四栏/多栏交互布局，实现定制化工作流排布。
   - 选中卡片后，侧栏中对应的图标以高对比度高亮发色（如 Lime 绿 / Indigo 靛蓝）显示，并在边缘浮动呈现微细的活跃圆点。
 * **全局凭证入口**: 底部常驻 Settings 齿轮图标，点击触发全局模型供应商 API 秘钥与 Base URL 的滑出抽屉面板（Settings Drawer）。
@@ -187,6 +184,9 @@
     - `GET /api/commands`: 检索并归纳用于前端输入的命令提示符（Builtin / Skill / Template / Extension）。
 * **接口路由汇聚**:
   - 引入并挂载 `wiki-manager.ts` 和 `qq-adapter.ts` 模块暴露的 HTTP 接口路由。
+  - **QQ 服务启停端点** (已实现):
+    - `POST /api/qq/start` — 初始化 QQ 适配器 + `child_process.spawn` 通过 PowerShell `Start-Process -Verb runAs` 拉起 NapCat (管理员提权) + 写 `enabled: true`
+    - `POST /api/qq/stop` — 关闭适配器 + `taskkill /PID /T /F` 终止进程树 + 写 `enabled: false`
 
 #### 📄 [study-agent-extension.ts](file:///c:/Users/lisky/Desktop/projectEL/backend/src/study-agent-extension.ts) (Pi 内核扩展)
 * **自定义测试工具注册**:
@@ -204,12 +204,27 @@
   - 解析 `inbox/archive_review.md` 为 JSON 返回。
   - 响应前端锁死修改，物理读写对应 MD Frontmatter 修改为 `lifecycle: immortal`；或执行物理归档至 `archive/` 并降级相关双链。
 
-#### 📄 `backend/src/qq-adapter.ts` (OneBot QQ 机器人适配器)
-* **连接与心跳健康监视**:
-  - 通过 WebSocket Client 连接 NapCat QQ 框架，向前端同步连接握手与时延数据。
-* **双向答题交互逻辑**:
-  - 监控绑定的 QQ 群聊消息，拦截并处理用户的选择题快捷回复（如回复字母 "A/B/C/D"），判定并写回错题库。
-  - 实现基于 Cron 的定时器，在预设学习时段通过 QQ 推送 Quiz 题目。
+#### 📄 `backend/src/qq-adapter.ts` (OneBot QQ 机器人适配器) — ✅ 已实现
+
+核心适配器 (~850 行)，实现以下模块：
+
+* **QQWebSocketServer**: `noServer: true` 模式 WebSocket 服务端，通过 `httpServer.on('upgrade')` 路由共享 3000 端口。支持 accessToken 校验、动态启停 (`initQQAdapter` / `stopQQAdapter`)。
+* **QQConnection**: WebSocket 封装层，含心跳超时检测 (60s)、API 调用 echo 匹配 + 3 次指数退避重试 (1s/2s/4s)、`sendApiCall()` 通用方法。
+* **OneBotMessageHandler**: 滑动窗口限流器、@提及/关键词触发检测、命令路由 (`/quiz`, `/help`, `/stats`)、测验答题路由。
+* **QQAIService**: Pi Agent 会话桥接，群上下文管理 (最近 20 条消息), ChatRefiner 知识提取触发, QuizService 答题判定, ContentRouter 内容格式化。
+* **markdownToPlainText()**: Markdown → QQ 纯文本转换 (标题→emoji, 粗体→【】, 列表→数字 emoji, 链接→文本+URL)。
+* **chunkMessage()**: 段落边界感知的智能分段 (1500 字/段)。
+* **sanitizeInput()**: 控制字符过滤 + 8000 字截断。
+
+配套模块：
+
+| 文件 | 功能 |
+|------|------|
+| `backend/src/qq-renderer.ts` | Puppeteer 浏览器池 + KaTeX LaTeX 公式渲染为图片 |
+| `backend/src/qq-chat-refiner.ts` | 群聊知识提取 → `kbService.createCard()` + `[[wikilinks]]` |
+| `backend/src/qq-quiz-service.ts` | AI 出题测验 (SM-2 联动 + XP 评分 + JSONL 日志) |
+| `backend/src/qq-report-generator.ts` | 运营周报 (热门话题/薄弱知识/排行榜/打卡趋势) |
+| `backend/src/qq-logger.ts` | 结构化 JSONL 日志 (日轮转 + 5s 缓冲区刷新) |
 
 ---
 

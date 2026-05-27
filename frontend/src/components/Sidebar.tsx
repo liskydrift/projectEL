@@ -1,4 +1,4 @@
-import { MessageSquare, Layers, BookOpen, Settings, Cpu } from 'lucide-react';
+import { MessageSquare, Layers, BookOpen, Settings, Cpu, Bot } from 'lucide-react';
 import { useWorkspace } from '../contexts/WorkspaceContext';
 
 export default function Sidebar() {
@@ -7,7 +7,8 @@ export default function Sidebar() {
   const cards = [
     { id: 'chat', label: '聊天', icon: MessageSquare, color: 'var(--secondary)' },
     { id: 'canvas', label: '画布', icon: Layers, color: 'var(--primary)' },
-    { id: 'knowledge', label: '知识库', icon: BookOpen, color: 'var(--accent)' }
+    { id: 'knowledge', label: '知识库', icon: BookOpen, color: 'var(--accent)' },
+    { id: 'qqbot', label: 'QQ Bot', icon: Bot, color: 'var(--accent)' }
   ];
 
   return (
