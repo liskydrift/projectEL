@@ -9,19 +9,22 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@xyflow/react": "^12.0.4",
+    "canvas-confetti": "^1.9.3",
+    "lucide-react": "^0.378.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "@xyflow/react": "^12.0.4",
-    "socket.io-client": "^4.7.5",
-    "lucide-react": "^0.378.0",
-    "canvas-confetti": "^1.9.3"
+    "react-markdown": "^10.1.0",
+    "rehype-sanitize": "^6.0.0",
+    "remark-gfm": "^4.0.1",
+    "socket.io-client": "^4.7.5"
   },
   "devDependencies": {
-    "vite": "^5.2.10",
-    "@vitejs/plugin-react": "^4.2.1",
-    "typescript": "^5.4.5",
+    "@types/canvas-confetti": "^1.6.4",
     "@types/react": "^18.2.79",
     "@types/react-dom": "^18.2.25",
-    "@types/canvas-confetti": "^1.6.4"
+    "@vitejs/plugin-react": "^4.2.1",
+    "typescript": "^5.4.5",
+    "vite": "^5.2.10"
   }
 }

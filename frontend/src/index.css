@@ -280,6 +280,277 @@ body {
 .node-llm.active { box-shadow: 5px 5px 0px var(--primary); }
 .node-write.active { box-shadow: 5px 5px 0px var(--accent); }
 
+.flow-handle-label {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #ffffff;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 900;
+  pointer-events: none;
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+
+.workflow-builder {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 188px minmax(320px, 1fr) 286px;
+  background: #050505;
+}
+
+.workflow-palette,
+.workflow-inspector {
+  min-width: 0;
+  background: #0c0c0c;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+}
+
+.workflow-palette {
+  border-right: 3px solid var(--panel-border);
+  padding: 14px 12px;
+}
+
+.workflow-inspector {
+  border-left: 3px solid var(--panel-border);
+  padding: 14px;
+}
+
+.workflow-flow-area {
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+
+.workflow-palette-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.workflow-group-label {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+  border-bottom: 2px solid var(--panel-border);
+  padding-bottom: 5px;
+}
+
+.workflow-palette-item {
+  width: 100%;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #000000;
+  color: #ffffff;
+  border: 2px solid var(--panel-border);
+  box-shadow: 3px 3px 0px #000000;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  cursor: grab;
+  padding: 8px 9px;
+}
+
+.workflow-palette-item:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0px #000000;
+}
+
+.workflow-palette-item:active {
+  cursor: grabbing;
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0px #000000;
+}
+
+.workflow-icon-button {
+  width: 26px;
+  height: 26px;
+  background-color: #000000;
+  border: 2px solid #222222;
+  color: #ffffff;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  flex-shrink: 0;
+}
+
+.workflow-icon-button:hover {
+  border-color: var(--secondary);
+  color: var(--secondary);
+}
+
+.workflow-icon-button.danger:hover {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.workflow-empty-state,
+.workflow-inspector-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.workflow-empty-state p,
+.workflow-inspector-header p {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.workflow-inspector-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  border-bottom: 2px solid var(--panel-border);
+  padding-bottom: 10px;
+}
+
+.workflow-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.workflow-field span {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.markdown-message {
+  white-space: normal;
+}
+
+.markdown-message > :first-child {
+  margin-top: 0;
+}
+
+.markdown-message > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-message h1,
+.markdown-message h2,
+.markdown-message h3,
+.markdown-message h4 {
+  margin: 12px 0 8px;
+  color: #ffffff;
+  font-family: var(--font-mono);
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.markdown-message h1 { font-size: 18px; }
+.markdown-message h2 { font-size: 16px; }
+.markdown-message h3 { font-size: 14px; }
+.markdown-message h4 { font-size: 13px; }
+
+.markdown-message p {
+  margin: 0 0 9px;
+}
+
+.markdown-message ul,
+.markdown-message ol {
+  margin: 8px 0 10px 18px;
+  padding: 0;
+}
+
+.markdown-message li {
+  margin: 4px 0;
+}
+
+.markdown-message strong {
+  color: var(--primary);
+  font-weight: 900;
+}
+
+.markdown-message a {
+  color: var(--secondary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.markdown-message code {
+  background: #000000;
+  border: 1px solid #333333;
+  color: var(--secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 1px 4px;
+}
+
+.markdown-message pre {
+  margin: 10px 0;
+  padding: 12px;
+  overflow: auto;
+  background: #000000;
+  border: 2px solid #333333;
+  box-shadow: 3px 3px 0px #000000;
+}
+
+.markdown-message pre code {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #ffffff;
+  white-space: pre;
+}
+
+.markdown-message blockquote {
+  margin: 10px 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--primary);
+  background: #080808;
+  color: #d8d8d8;
+}
+
+.markdown-message table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+
+.markdown-message th,
+.markdown-message td {
+  border: 2px solid #333333;
+  padding: 7px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.markdown-message th {
+  background: #000000;
+  color: var(--primary);
+  font-weight: 900;
+}
+
+.markdown-message hr {
+  border: 0;
+  border-top: 2px solid #333333;
+  margin: 12px 0;
+}
+
 /* ================= Resizable Workspace Columns & Drag Drop ================= */
 
 .workspace-container {

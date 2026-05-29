@@ -2,6 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import { Cpu, Send, Paperclip, XCircle, X, Trash2, Plus } from 'lucide-react';
 import { useChat } from '../contexts/ChatContext';
 import { useWorkspace } from '../contexts/WorkspaceContext';
+import MarkdownMessage from './MarkdownMessage';
 
 export default function ChatCard() {
   const {
@@ -329,7 +330,7 @@ export default function ChatCard() {
                     : 'var(--text-main)'
                 }}
               >
-                {m.text}
+                {m.role === 'assistant' ? <MarkdownMessage text={m.text} /> : m.text}
                 {isStreaming && !isUser && m.role === 'assistant' && <span className="typing-cursor"></span>}
                 
                 {/* User Attachment Images */}
