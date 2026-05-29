@@ -20,7 +20,7 @@ Mermaid diagram
 wiki_core/concepts/
  目录中卡片 frontmatter 的 tags 命中频率，并提取其中有效置信度 effective_confidence 衰减最快（代表群员最容易遗忘/提问最多）的前 5 个技术标签或概念。
 作用：群主可以直观看出群内近期讨论最激烈、最薄弱的知识模块是哪些。
-2. 活跃排行 (Active Leaderboard)
+2. 活跃排行 (Active Leaderboard)1
 计算逻辑：解析每次用户答题的日志文件 inbox/checkin_logs.jsonl，汇总 7 日内各 QQ 用户（user_id）的答题总次数、正确率及累加的 XP 积分，输出前 10 名的排行榜。
 作用：辅助群主发放社群福利或识别群活跃分子。
 3. 打卡趋势 (Check-In Trends)
