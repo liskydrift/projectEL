@@ -171,7 +171,7 @@ start.bat
 ### 6.1 目录结构
 
 ```
-snapshot-pi/
+projectEL/
 ├── backend/                          # Node.js Express 后端网关服务
 │   └── src/
 │       ├── server.ts                 # WebSocket/HTTP 网关，多会话管理、Pi Session 生命周期
