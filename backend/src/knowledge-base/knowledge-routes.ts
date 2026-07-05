@@ -1,4 +1,4 @@
-import { Router } from 'express';
+﻿import { Router } from 'express';
 import type { Server as SocketServer } from 'socket.io';
 import { KnowledgeBaseService } from './knowledge-base-service.js';
 import type { CreateCardInput, UpdateCardInput, CreateNoteInput, UpdateNoteInput, SourceFile } from './types.js';
@@ -146,6 +146,17 @@ export function createKnowledgeRoutes(getService: () => KnowledgeBaseService, io
       if (!note) return res.status(404).json({ error: 'Note not found' });
       io.emit('knowledge:note-updated', { note });
       res.json(note);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.delete('/notes/:id', async (req, res) => {
+    try {
+      const ok = await service.deleteNote(req.params.id);
+      if (!ok) return res.status(404).json({ error: 'Note not found' });
+      io.emit('knowledge:note-deleted', { id: req.params.id });
+      res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

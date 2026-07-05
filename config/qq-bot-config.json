@@ -2,7 +2,8 @@
   "enabled": true,
   "napcat": {
     "path": "napcat/napcat.bat",
-    "templateDir": "config/napcat-templates"
+    "templateDir": "config/napcat-templates",
+    "qqAccount": 2707327376
   },
   "wsPath": "/qq/ws",
   "accessToken": "",
@@ -35,6 +36,6 @@
   },
   "groupSync": {
     "enabled": true,
-    "allowedGroupIds": []
+    "allowedGroupIds": [623331086]
   }
 }

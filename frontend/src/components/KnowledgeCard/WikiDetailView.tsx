@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import type { WikiCard, useKnowledgeBase } from '../../hooks/useKnowledgeBase';
 import ConfidenceBadge from './ConfidenceBadge';
-import { ArrowLeft, Edit3, Zap } from 'lucide-react';
+import { ArrowLeft, Edit3, FileText, Trash2, Zap } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
 import remarkGfm from 'remark-gfm';
@@ -49,6 +49,41 @@ export default function WikiDetailView({ cardId, kb, onBack, onEdit }: Props) {
         </button>
         <button onClick={handleBoost} className="btn-premium" style={{ padding: '6px 10px', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
           <Zap size={12} /> 提升置信度
+        </button>
+        <button
+          onClick={async () => {
+            if (!confirm('确定将这张知识卡片转为整理笔记？笔记将出现在「整理笔记」标签页中。')) return;
+            try {
+              await kb.createNote({
+                title: card.title,
+                body: card.body,
+                tags: card.tags,
+                lifecycle: card.lifecycle,
+              });
+              alert('已转为整理笔记！');
+            } catch (e: any) {
+              alert('转换失败：' + e.message);
+            }
+          }}
+          className="btn-premium btn-secondary"
+          style={{ padding: '6px 10px', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}
+        >
+          <FileText size={12} /> 转为笔记
+        </button>
+        <button
+          onClick={async () => {
+            if (!confirm('确定要删除「' + card.title + '」？此操作不可撤销。')) return;
+            try {
+              await kb.deleteCard(card.id);
+              onBack();
+            } catch (e: any) {
+              alert('删除失败：' + e.message);
+            }
+          }}
+          className="btn-premium btn-secondary"
+          style={{ padding: '6px 10px', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px', borderColor: 'var(--error)', color: 'var(--error)' }}
+        >
+          <Trash2 size={12} /> 删除
         </button>
       </div>
 

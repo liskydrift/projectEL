@@ -46,6 +46,7 @@ export default function ChatCard() {
 
   // Rename state
   const [isRenaming, setIsRenaming] = React.useState(false);
+  const [isMenuOpen, setIsMenuOpen] = React.useState(false);
   const [renameValue, setRenameValue] = React.useState('');
   const renameInputRef = React.useRef<HTMLInputElement | null>(null);
 
@@ -57,7 +58,7 @@ export default function ChatCard() {
 
   // Fetch available skills on mount
   useEffect(() => {
-    fetch('/api/workflows')
+    fetch('http://localhost:3000/api/workflows')
       .then(res => res.json())
       .then(data => setAvailableSkills(Array.isArray(data) ? data : (data.workflows || [])))
       .catch(err => console.error("Failed to load skills for slash commands:", err));
@@ -96,7 +97,21 @@ export default function ChatCard() {
     return () => document.removeEventListener('mousedown', handler);
   }, [showNewSessionPopover]);
 
-  // Auto scroll to bottom
+
+  // Close session menu on outside click
+  React.useEffect(() => {
+    if (!isMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      setIsMenuOpen(false);
+    };
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handler);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mousedown', handler);
+    };
+  }, [isMenuOpen]);  // Auto scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -225,6 +240,7 @@ export default function ChatCard() {
         backgroundColor: '#0c0c0c',
         border: '3px solid #222222',
         boxShadow: '4px 4px 0px #000000',
+        borderRadius: '12px',
         transform: 'none' // Override hover translation for the full workspace layout stability
       }}
     >
@@ -348,7 +364,7 @@ export default function ChatCard() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <button
-              onClick={clearSession}
+              onClick={() => { if (window.confirm('确定要清空当前对话历史吗？此操作不可撤销。')) { clearSession(); } }}
               disabled={isStreaming}
               style={{
                 width: '24px',
@@ -456,7 +472,7 @@ export default function ChatCard() {
             ))}
           </select>
           
-          {/* Session Switcher with Rename */}
+          {/* Session Switcher with Menu */}
           <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>会话:</span>
           {isRenaming ? (
             <>
@@ -477,36 +493,19 @@ export default function ChatCard() {
                   fontFamily: 'var(--font-mono)',
                   padding: '2px 4px',
                   outline: 'none',
-                  maxWidth: '150px'
+                  maxWidth: '120px'
                 }}
               />
-              <button
-                onClick={handleSubmitRename}
-                style={{
-                  backgroundColor: 'transparent',
-                  border: 'none',
-                  color: 'var(--success)',
-                  cursor: 'pointer',
-                  fontSize: '12px',
-                  padding: '0 2px'
-                }}
-                title="确认"
-              >✓</button>
-              <button
-                onClick={handleCancelRename}
-                style={{
-                  backgroundColor: 'transparent',
-                  border: 'none',
-                  color: 'var(--error)',
-                  cursor: 'pointer',
-                  fontSize: '12px',
-                  padding: '0 2px'
-                }}
-                title="取消"
-              >✕</button>
+              <button onClick={handleSubmitRename} style={{ backgroundColor: 'transparent', border: 'none', color: 'var(--success)', cursor: 'pointer', fontSize: '12px', padding: '0 2px' }} title="确认">✓</button>
+              <button onClick={handleCancelRename} style={{ backgroundColor: 'transparent', border: 'none', color: 'var(--error)', cursor: 'pointer', fontSize: '12px', padding: '0 2px' }} title="取消">✗</button>
             </>
           ) : (
-            <>
+            <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setIsMenuOpen(true);
+              }}
+            >
               <select
                 value={sessionId}
                 onChange={(e) => switchSession(e.target.value)}
@@ -520,32 +519,89 @@ export default function ChatCard() {
                   borderRadius: '0',
                   outline: 'none',
                   cursor: 'pointer',
-                  maxWidth: '150px'
+                  maxWidth: '120px'
                 }}
               >
                 {sessions.map((s: any) => (
                   <option key={s.id} value={s.id} style={{ backgroundColor: '#0a0a0a', color: '#d1d5db' }}>{s.name || s.id}</option>
                 ))}
               </select>
-              <button
-                onClick={handleStartRename}
+              <button onClick={() => setIsMenuOpen(!isMenuOpen)}
                 style={{
-                  backgroundColor: 'transparent',
-                  border: 'none',
-                  color: '#555555',
+                  backgroundColor: '#000000',
+                  border: '2px solid #333333',
+                  color: '#888888',
+                  fontSize: '10px',
+                  fontFamily: 'var(--font-mono)',
+                  padding: '2px 6px',
                   cursor: 'pointer',
-                  fontSize: '11px',
-                  padding: '0 2px',
+                  marginLeft: '2px',
                   display: 'flex',
-                  alignItems: 'center'
+                  alignItems: 'center',
+                  lineHeight: '1'
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--secondary)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = '#555555'; }}
-                title="重命名会话"
-              >✎</button>
-            </>
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--secondary)'; e.currentTarget.style.color = 'var(--secondary)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#333333'; e.currentTarget.style.color = '#888888'; }}
+                title="会话操作"
+              >⋮</button>
+              {isMenuOpen && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  right: '0',
+                  marginTop: '4px',
+                  backgroundColor: '#0c0c0c',
+                  border: '2px solid #444444',
+                  boxShadow: '4px 4px 0px #000000',
+                  zIndex: 300,
+                  minWidth: '100px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0'
+                }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <button onClick={() => { setIsMenuOpen(false); handleStartRename(); }}
+                    style={{
+                      padding: '8px 14px',
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      borderBottom: '1px solid #222222',
+                      color: '#d1d5db',
+                      fontSize: '10px',
+                      fontFamily: 'var(--font-mono)',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#1a1a1a'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                  >✏️ 重命名</button>
+                  {sessions.length > 1 && sessionId !== 'default-session' && (
+                    <button onClick={() => { setIsMenuOpen(false); deleteSession(sessionId); }}
+                      style={{
+                        padding: '8px 14px',
+                        backgroundColor: 'transparent',
+                        border: 'none',
+                        color: 'var(--error)',
+                        fontSize: '10px',
+                        fontFamily: 'var(--font-mono)',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#1a1a1a'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                    >🗑️ 删除</button>
+                  )}
+                </div>
+              )}
+            </div>
           )}
-
           {/* New Session Button with Popover */}
           <div style={{ position: 'relative' }} ref={popoverRef}>
             <button
@@ -667,25 +723,6 @@ export default function ChatCard() {
             )}
           </div>
 
-          {/* Delete Session Button */}
-          {sessions.length > 1 && sessionId !== 'default-session' && (
-            <button
-              onClick={() => deleteSession(sessionId)}
-              style={{
-                backgroundColor: '#000000',
-                border: '2px solid var(--error)',
-                color: 'var(--error)',
-                fontSize: '10px',
-                fontFamily: 'var(--font-mono)',
-                padding: '2px 6px',
-                cursor: 'pointer',
-                boxShadow: '1px 1px 0px var(--error)'
-              }}
-              title="删除当前会话"
-            >
-              删除
-            </button>
-          )}
         </div>
       </div>
 
@@ -703,6 +740,8 @@ export default function ChatCard() {
           const isUser = m.role === 'user';
           const isTool = m.role === 'toolCall' || m.role === 'toolResult';
           const isSubagent = m.role === 'custom' && m.customType && m.customType.startsWith('subagent-');
+          // 隐藏工具执行和子智能体的中间过程消息，只显示用户消息和AI回复
+          if (isTool || isSubagent) return null;
 
           if (isSubagent) {
             const status = m.customType === 'subagent-status' ? 'working' : m.customType === 'subagent-result' ? 'done' : 'error';
@@ -762,6 +801,7 @@ export default function ChatCard() {
                     : isTool 
                       ? '2px dashed #333333'
                       : '2px solid #222222',
+                  borderRadius: '8px',
                   boxShadow: isUser 
                     ? '3px 3px 0px var(--secondary)' 
                     : isTool 
@@ -773,7 +813,7 @@ export default function ChatCard() {
                 }}
               >
                 {m.role === 'assistant' ? <MarkdownMessage text={m.text} /> : m.text}
-                {isStreaming && !isUser && m.role === 'assistant' && <span className="typing-cursor"></span>}
+                {isStreaming && !isUser && m.role === 'assistant' && (messages.filter(m => m.role === 'assistant').pop()?.id === m.id) && <span className="typing-cursor"></span>}
                 
                 {/* User Attachment Images */}
                 {isUser && m.images && m.images.length > 0 && (

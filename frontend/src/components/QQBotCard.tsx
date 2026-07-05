@@ -27,8 +27,9 @@ export default function QQBotCard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
+ const [actionLoading, setActionLoading] = useState(false);
+ const [actionError, setActionError] = useState<string | null>(null);
+ const [qrcodeImg, setQrcodeImg] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -84,18 +85,40 @@ export default function QQBotCard() {
       setActionError('无法连接到后端 (localhost:3000)');
     }
     setActionLoading(false);
-    fetchData();
-  };
+   fetchData();
+ };
 
-  const isRunning = status?.running;
-  const hasOnlineAccount = status?.accounts?.some((a) => a.online);
-  const waitingForLogin = isRunning && !hasOnlineAccount;
+const fetchQRCode = useCallback(async () => {
+  try {
+    const res = await fetch(`${API_BASE}/qrcode?t=${Date.now()}`);
+    setQrcodeImg(res.ok ? `${API_BASE}/qrcode?t=${Date.now()}` : null);
+  } catch {
+    setQrcodeImg(null);
+  }
+}, []);
 
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 30000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
+ const isRunning = status?.running;
+ const hasOnlineAccount = status?.accounts?.some((a) => a.online);
+ const waitingForLogin = isRunning && !hasOnlineAccount;
+
+ useEffect(() => {
+   fetchData();
+   const interval = setInterval(fetchData, 30000);
+   return () => clearInterval(interval);
+ }, [fetchData]);
+
+ useEffect(() => {
+   if (waitingForLogin) {
+     fetchQRCode();
+    const interval = setInterval(fetchQRCode, 1000);
+    return () => {
+       clearInterval(interval);
+       setQrcodeImg(null);
+     };
+   } else {
+     setQrcodeImg(null);
+   }
+ }, [waitingForLogin, fetchQRCode]);
 
   const toggleSection = (section: string) => {
     setExpanded((prev) => (prev === section ? null : section));
@@ -240,20 +263,41 @@ export default function QQBotCard() {
           </div>
         )}
 
-        {waitingForLogin && (
-          <div
-            style={{
-              padding: '10px',
-              backgroundColor: 'rgba(34,197,94,0.1)',
-              border: '1px solid #22c55e',
-              color: '#22c55e',
-              marginBottom: '10px',
-              fontSize: '11px',
-            }}
-          >
-            正在等待 QQ 登录...请在弹出的 NapCat 命令行窗口中扫码
-          </div>
-        )}
+       {waitingForLogin && (
+         <div
+           style={{
+             padding: '14px',
+             backgroundColor: 'rgba(34,197,94,0.08)',
+             border: '1px solid #22c55e',
+             color: '#22c55e',
+             marginBottom: '10px',
+             textAlign: 'center',
+           }}
+         >
+           {qrcodeImg ? (
+             <>
+               <img
+                 src={qrcodeImg}
+                 alt="QQ 登录二维码"
+                 style={{
+                   width: '200px',
+                   height: '200px',
+                   imageRendering: 'pixelated',
+                   display: 'block',
+                   margin: '0 auto 10px',
+                 }}
+               />
+               <div style={{ fontSize: '11px', color: '#22c55e' }}>
+                 请使用手机 QQ 扫描上方二维码登录
+               </div>
+             </>
+           ) : (
+             <div style={{ fontSize: '11px' }}>
+               正在等待二维码...
+             </div>
+           )}
+         </div>
+       )}
 
         {/* Connection Status */}
         <SectionHeader

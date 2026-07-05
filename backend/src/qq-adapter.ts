@@ -439,32 +439,42 @@ class QQConnection {
 class QQWebSocketServer {
   private wss: WebSocketServer;
   private connections: Map<number, QQConnection> = new Map();
+  // 标记是否曾经成功连上过（用于健康检查判断是否需要重启）
+  private hasEverConnected: boolean = false;
   private messageHandler: OneBotMessageHandler;
   private aiService: QQAIService;
   private config: QQBotConfig;
   private io: IOServer;
-  private httpServer: HTTPServer;
+ private httpServer: HTTPServer;
+  private restartNapCat: (() => void) | null = null;
+  private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
+  private consecutiveHealthFailures: number = 0;
+  private readonly MAX_HEALTH_FAILURES = 3;
 
-  constructor(
-    _httpServer: HTTPServer,
-    getOrCreateSession: (sessionId: string, presetId?: string) => Promise<unknown>,
-    io: IOServer,
-    config: QQBotConfig,
-    kbService: KnowledgeBaseService,
-  ) {
-    this.config = config;
-    this.io = io;
-    this.httpServer = _httpServer;
-    this.messageHandler = new OneBotMessageHandler(config);
-    this.aiService = new QQAIService(getOrCreateSession, io, config, kbService);
+ constructor(
+   _httpServer: HTTPServer,
+   getOrCreateSession: (sessionId: string, presetId?: string) => Promise<unknown>,
+   io: IOServer,
+   config: QQBotConfig,
+ kbService: KnowledgeBaseService,
+  restartNapCat?: () => void,
+ ) {
+   this.config = config;
+   this.io = io;
+   this.httpServer = _httpServer;
+   this.messageHandler = new OneBotMessageHandler(config);
+   this.aiService = new QQAIService(getOrCreateSession, io, config, kbService);
+    this.restartNapCat = restartNapCat || null;
 
     // 创建独立的 HTTP 服务器，避免与主后端端口 3000 冲突
     this.httpServer = createHttpServer();
     this.wss = new WebSocketServer({ server: this.httpServer });
 
-    this.httpServer.listen(QQ_WS_PORT, () => {
-      getQQLogger().info('server', `QQ WebSocket server listening on port ${QQ_WS_PORT}`);
-    });
+   this.httpServer.listen(QQ_WS_PORT, () => {
+     getQQLogger().info('server', `QQ WebSocket server listening on port ${QQ_WS_PORT}`);
+   });
+    // 启动健康检查定时器（每 45 秒检查一次账号在线状态）
+    this.startHealthCheck();
 
     this.wss.on('connection', (ws) => {
       const conn = new QQConnection(ws);
@@ -479,8 +489,11 @@ class QQWebSocketServer {
       };
 
       conn.onMessage = (event) => {
-        if (event.post_type === 'meta_event' && event.meta_event_type === 'lifecycle') {
-          const existing = this.connections.get(event.self_id);
+         if (event.post_type === 'meta_event' && event.meta_event_type === 'lifecycle') {
+            // 有账号成功连上，标记 hasEverConnected
+            this.hasEverConnected = true;
+            getQQLogger().info('connection', 'QQ account connected, hasEverConnected = true');
+            const existing = this.connections.get(event.self_id);
           if (existing && existing !== conn) {
             // 旧连接还存在，关闭旧连接
             existing.ws.close();
@@ -524,12 +537,78 @@ class QQWebSocketServer {
     return this.connections.get(selfId);
   }
 
-  hasConnection(selfId: number): boolean {
-    return this.connections.has(selfId);
+ hasConnection(selfId: number): boolean {
+   return this.connections.has(selfId);
+ }
+  // ─── 健康检查 ────────────────────────────────────────────────────
+  private startHealthCheck(): void {
+    if (this.healthCheckTimer) clearInterval(this.healthCheckTimer);
+    this.healthCheckTimer = setInterval(() => {
+      this.checkConnectionsHealth();
+    }, 45000);
+    getQQLogger().debug('health', 'Health check timer started (45s interval)');
+  }
+ private async checkConnectionsHealth(): Promise<void> {
+    if (this.connections.size === 0) {
+    // 没有活跃连接 → NapCat 可能已崩溃，触发重启
+    if (!this.hasEverConnected) {
+      // 从没连上过（比如等扫码），不触发重启
+      getQQLogger().debug('health', 'No connections and never connected, skipping restart');
+      return;
+    }
+    this.consecutiveHealthFailures++;
+      getQQLogger().warn('health', `No connections (${this.consecutiveHealthFailures}/${this.MAX_HEALTH_FAILURES}), will restart`);
+      if (this.consecutiveHealthFailures >= this.MAX_HEALTH_FAILURES) {
+        this.handleConnectionLost();
+      }
+      return;
+    }
+   for (const [selfId, conn] of this.connections) {
+      if (!conn.isOpen) {
+        getQQLogger().warn('health', `Connection ${selfId}: WebSocket closed, triggering restart`);
+        this.handleConnectionLost();
+        return;
+      }
+      try {
+        const resp = await conn.sendApiCall('get_login_info', {}, 0);
+        if (resp.status === 'ok' && resp.data) {
+          this.consecutiveHealthFailures = 0;
+          getQQLogger().debug('health', `Account ${selfId} health check OK`);
+        } else {
+          this.consecutiveHealthFailures++;
+          getQQLogger().warn('health', `Account ${selfId} health check failed (${this.consecutiveHealthFailures}/${this.MAX_HEALTH_FAILURES}): status=${resp.status}`);
+          if (this.consecutiveHealthFailures >= this.MAX_HEALTH_FAILURES) {
+            this.handleConnectionLost();
+            return;
+          }
+        }
+      } catch (err: any) {
+        this.consecutiveHealthFailures++;
+        getQQLogger().warn('health', `Account ${selfId} health check error (${this.consecutiveHealthFailures}/${this.MAX_HEALTH_FAILURES}): ${err.message}`);
+        if (this.consecutiveHealthFailures >= this.MAX_HEALTH_FAILURES) {
+          this.handleConnectionLost();
+          return;
+        }
+      }
+    }
+  }
+  private handleConnectionLost(): void {
+    getQQLogger().warn('health', 'Connection lost, triggering NapCat restart');
+    this.consecutiveHealthFailures = 0;
+    if (this.restartNapCat) {
+      this.restartNapCat();
+    }
+  }
+  resetHealthCheck(): void {
+    this.consecutiveHealthFailures = 0;
   }
 
-  close(): void {
-    getQQLogger().info('server', 'QQWebSocketServer shutting down...');
+ close(): void {
+   getQQLogger().info('server', 'QQWebSocketServer shutting down...');
+    if (this.healthCheckTimer) {
+      clearInterval(this.healthCheckTimer);
+      this.healthCheckTimer = null;
+    }
     // 关闭所有活跃连接
     for (const [selfId, conn] of this.connections) {
       try {
@@ -600,7 +679,18 @@ class OneBotMessageHandler {
       return;
     }
 
-    if (!cleanText && images.length === 0) return;
+   if (!cleanText && images.length === 0) return;
+    if (!cleanText && images.length === 0) {
+      // 只有触发词没有其他内容时，回复默认提示
+      const defaultMsg = '👋 在呢！输入 /help 查看可用命令，或者直接 @我 问问题～';
+      conn.sendApiCall('send_group_msg', {
+        group_id: event.group_id!,
+        message: defaultMsg,
+      }).catch((err) => {
+        console.error('[QQ] Failed to send default greeting:', err?.message || err);
+      });
+      return;
+    }
 
     getQQLogger().info('message', `Group message from ${event.user_id} in ${event.group_id}`, {
       userId: event.user_id,
@@ -672,7 +762,15 @@ class OneBotMessageHandler {
       cleanText = cleanText.replace(`[CQ:at,qq=${conn.selfId}]`, '').trim();
     }
 
-    if (!cleanText && images.length === 0) return;
+    if (!cleanText && images.length === 0) {
+      // 只有触发词没有其他内容时，回复默认提示
+      const defaultMsg = '👋 在呢！输入 /help 查看可用命令，或者直接 @我 问问题～';
+      conn.sendApiCall('send_group_msg', {
+        group_id: event.group_id!,
+        message: defaultMsg,
+      }).catch(() => {});
+      return;
+    }
 
     getQQLogger().info('message', `Private message from ${event.user_id}`, {
       userId: event.user_id,
@@ -1009,9 +1107,8 @@ Send me any question to start learning!`;
     const modelInfo = session.model
       ? `${session.model.provider}/${session.model.id}`
       : 'none';
-    console.log('[QQ:Collect] Starting, model:', modelInfo, 'thinkingLevel:', session.thinkingLevel);
-
-    return new Promise((resolve, reject) => {
+   console.log('[QQ:Collect] Starting, model:', modelInfo, 'thinkingLevel:', session.thinkingLevel);
+   return new Promise((resolve, reject) => {
       let collected = '';
       let finished = false;
       let unsubscribe: () => void;
@@ -1069,10 +1166,15 @@ Send me any question to start learning!`;
             if (event.message.stopReason === 'error') {
               const errMsg = event.message.errorMessage || 'AI error';
               cleanUp();
-              reject(new Error(errMsg));
+             reject(new Error(errMsg));
+             return;
+           }
+            // 当 AI 产生工具调用时，不结束收集，等工具执行完后继续收集文本回复
+            if (event.message.stopReason === 'toolUse') {
+              console.log('[QQ:Collect] toolUse detected, waiting for tool results...');
               return;
             }
-            console.log('[QQ:Collect] message_end, collected', collected.length, 'chars');
+           console.log('[QQ:Collect] message_end, collected', collected.length, 'chars');
             cleanUp();
             resolve(collected);
           }
@@ -1118,18 +1220,19 @@ Send me any question to start learning!`;
 let qqServer: QQWebSocketServer | null = null;
 
 export function initQQAdapter(
-  httpServer: HTTPServer,
-  getOrCreateSession: (sessionId: string, presetId?: string) => Promise<any>,
-  io: IOServer,
-  config: QQBotConfig,
-  kbService: KnowledgeBaseService,
+ httpServer: HTTPServer,
+ getOrCreateSession: (sessionId: string, presetId?: string) => Promise<any>,
+ io: IOServer,
+ config: QQBotConfig,
+ kbService: KnowledgeBaseService,
+  restartNapCat?: () => void,
 ): void {
   if (qqServer) {
     console.warn('[QQ] Adapter already initialized');
     return;
   }
 
-  qqServer = new QQWebSocketServer(httpServer, getOrCreateSession, io, config, kbService);
+  qqServer = new QQWebSocketServer(httpServer, getOrCreateSession, io, config, kbService, restartNapCat);
   console.log('[QQ] OneBot v11 adapter initialized on path:', config.wsPath);
 }
 

@@ -149,6 +149,24 @@ export class KnowledgeBaseService {
     return path.join(this.workspaceCwd, 'knowledge_bases', this.activeKbId, 'sources');
   }
 
+  get activeKbPath(): string {
+    return path.join(this.workspaceCwd, '.pi', 'active_kb.json');
+  }
+
+  async listKbs(): Promise<string[]> {
+    const kbRoot = path.join(this.workspaceCwd, 'knowledge_bases');
+    if (!await fs.pathExists(kbRoot)) return ['default'];
+    const entries = await fs.readdir(kbRoot, { withFileTypes: true });
+    return entries.filter(e => e.isDirectory()).map(e => e.name);
+  }
+
+  async switchKb(kbId: string): Promise<void> {
+    this.activeKbId = kbId;
+    await fs.ensureDir(path.dirname(this.activeKbPath));
+    await fs.writeJson(this.activeKbPath, { activeKbId: kbId }, { spaces: 2 });
+    await this.ensureDirectories();
+  }
+
   constructor(workspaceCwd: string) {
     this.workspaceCwd = workspaceCwd;
   }
@@ -408,6 +426,15 @@ export class KnowledgeBaseService {
     const filePath = this.resolveCardPath(existing);
     if (!filePath) return false;
 
+    await fs.remove(filePath);
+    return true;
+  }
+
+  async deleteNote(id: string): Promise<boolean> {
+    const existing = await this.getNote(id);
+    if (!existing) return false;
+    const filePath = path.join(this.curatedNotesDir, existing.filename);
+    if (!await fs.pathExists(filePath)) return false;
     await fs.remove(filePath);
     return true;
   }
@@ -753,6 +780,15 @@ export class KnowledgeBaseService {
   async deleteSource(filename: string): Promise<boolean> {
     const filePath = path.join(this.sourcesDir, filename);
     if (!filePath.startsWith(this.sourcesDir)) return false;
+    if (!await fs.pathExists(filePath)) return false;
+    await fs.remove(filePath);
+    return true;
+  }
+
+  async deleteNote(id: string): Promise<boolean> {
+    const existing = await this.getNote(id);
+    if (!existing) return false;
+    const filePath = path.join(this.curatedNotesDir, existing.filename);
     if (!await fs.pathExists(filePath)) return false;
     await fs.remove(filePath);
     return true;

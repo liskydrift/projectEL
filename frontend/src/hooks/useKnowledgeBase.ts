@@ -187,6 +187,11 @@ export function useKnowledgeBase() {
     return note;
   }, [apiCall, fetchNotes]);
 
+  const deleteNote = useCallback(async (id: string): Promise<void> => {
+    await apiCall(`/notes/${id}`, { method: 'DELETE' });
+    await fetchNotes();
+  }, [apiCall, fetchNotes]);
+
   // =========================================================================
   // Archive
   // =========================================================================
@@ -260,7 +265,7 @@ export function useKnowledgeBase() {
   return {
     cards, notes, loading, error,
     fetchCards, fetchCard, createCard, updateCard, deleteCard, boostCard, searchCards,
-    fetchNotes, createNote, updateNote, reviewNote,
+    fetchNotes, createNote, updateNote, reviewNote, deleteNote,
     runArchiveLint, executeArchive, fetchArchiveReview, fetchArchivedCards,
     fetchStats,
     fetchSources, fetchSource,

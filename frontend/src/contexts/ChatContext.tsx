@@ -256,17 +256,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (event.assistantMessageEvent?.type === 'text_delta') {
           const delta = event.assistantMessageEvent.delta;
           setMessages((prev) => {
-            const lastIndex = prev.length - 1;
-            if (lastIndex < 0) return prev;
-            const last = prev[lastIndex];
-            if (last.role !== 'assistant') return prev;
-            
-            const updated = prev.slice(0, lastIndex);
-            updated.push({
-              ...last,
-              text: last.text + delta
-            });
-            return updated;
+            // 找到最后一条assistant消息，不受中间toolCall消息干扰，保证打字机效果
+            const lastIdx = [...prev].reverse().findIndex(m => m.role === 'assistant');
+            if (lastIdx === -1) return prev;
+            const idx = prev.length - 1 - lastIdx;
+            return prev.map((m, i) => i === idx ? { ...m, text: m.text + delta } : m);
           });
         }
       } else if (event.type === 'tool_execution_start') {

@@ -375,6 +375,120 @@ powershell -ExecutionPolicy Bypass -File scripts\build-onekey-package.ps1
 
 ---
 
+## 13. 新增功能对比（与 GitHub 最新版）
+
+以下列出本仓库相对于 GitHub 原版 [`liskydrift/projectEL`](https://github.com/liskydrift/projectEL)（origin/main）新增的全部功能。变更跨越 11 个源文件，共 **+851 / -220** 行代码。
+
+### 13.1 QQ Bot 二维码内嵌登录
+
+**文件：** `backend/src/server.ts` · `frontend/src/components/QQBotCard.tsx`
+
+原版 NapCat 启动后仅输出二维码 URL 到控制台，用户需手动查看。新版：
+- 后端解析 NapCat stdout，提取二维码解谜 URL，通过 Socket.io 实时推送至前端
+- 新增 `/api/qq/qrcode` 端点，直接提供缓存二维码图片
+- WebUI 内嵌二维码图片展示，1s 间隔轮询；手机 QQ 扫码即可登录，无需查看后台命令行
+
+### 13.2 QQ Bot 健康检查与自动恢复
+
+**文件：** `backend/src/qq-adapter.ts`
+
+新增适配器内置健康检查机制：
+- 每 **45 秒** 检查一次 WebSocket 连接与账号在线状态（调用 `get_login_info`）
+- 连续 **3 次** 健康检查失败 → 自动杀死 NapCat 进程并重启
+- 健康计数器随成功检查自动归零（无抖动重启）
+- 适用于 NapCat 意外崩溃、网络闪断等场景
+
+### 13.3 NapCat 自动启动与快速登录
+
+**文件：** `backend/src/server.ts` · `config/qq-bot-config.json`
+
+| 特性 | 原版行为 | 新版行为 |
+|:---|:---|:---|
+| 启动方式 | 用户手动点击 QQ Bot 卡片启动按钮 | 配置 `enabled: true` 时，**服务端启动时自动拉起** NapCat |
+| QQ 账号 | 无配置，需手动输入 | 新增 `napcat.qqAccount: 2707327376` 配置，NapCat 启动时带 `-q` 参数快速登录 |
+| 密码传递 | 无 | 通过 `NAPCAT_QUICK_PASSWORD` 环境变量传递快速登录密码，NapCat 可自动重试登录 |
+
+### 13.4 QQ Bot toolUse 处理
+
+**文件：** `backend/src/qq-adapter.ts`
+
+原版 QQ 适配器在 AI 回复 `stopReason: 'toolUse'` 时直接结束消息收集，无法获取工具执行后的最终回复。新版在检测到 toolUse 时**等待工具执行完毕**，继续收集文本内容后再返回完整消息。
+
+### 13.5 多知识库管理
+
+**文件：** `backend/src/knowledge-base/knowledge-base-service.ts`
+
+- 新增 `listKbs()`：列出 `knowledge_bases/` 目录下所有知识库
+- 新增 `switchKb(kbId)`：切换活动知识库，通过 `.pi/active_kb.json` 持久化
+- 新增 `activeKbPath` getter：指向当前知识库持久化路径
+
+### 13.6 知识库笔记 CRUD 与卡片↔笔记双向转换
+
+**文件：** `backend/src/knowledge-base/knowledge-base-service.ts` · `knowledge-routes.ts` · `frontend/src/hooks/useKnowledgeBase.ts` · `WikiDetailView.tsx` · `KnowledgeCard.tsx`
+
+- **删除笔记：** 新增 `deleteNote(id)` 后端方法 + `DELETE /api/knowledge/notes/:id` 路由，前端 `deleteNote()` hook，笔记详情页一键删除
+- **删除知识卡片：** WikiDetailView 新增删除按钮 + `deleteCard()` hook
+- **卡片→笔记：** WikiDetailView 新增转为笔记按钮，调用 `createNote()` 将卡片内容写入 curated_notes
+- **笔记→卡片：** 笔记详情页新增转为知识卡片按钮，调用 `createCard()` 将笔记提升为 Wiki 卡片
+
+### 13.7 知识卡片 UI：标签页视图与笔记管理
+
+**文件：** `frontend/src/components/KnowledgeCard/KnowledgeCard.tsx`
+
+知识库卡片从单一视图重构为**双标签页**布局：
+
+| 标签页 | 内容 | 操作 |
+|:---|:---|:---|
+| 📇 知识卡片 | Wiki 卡片网格 + 搜索 | 新建 / 归档 / 源文件 / 刷新 |
+| 📝 整理笔记 | 笔记列表 + 搜索 | 点击查看详情 / 转为卡片 / 删除 |
+
+- 笔记列表卡片式展示：标题、生命周期标签、标签、稳定性/难度/复习次数
+- 笔记搜索（按标题和标签过滤）
+- 笔记详情页：完整 Markdown 正文 + 元数据 + 操作按钮
+- 添加刷新按钮（`RefreshCw` 图标）
+
+### 13.8 会话上下文菜单
+
+**文件：** `frontend/src/components/ChatCard.tsx`
+
+原版会话操作按钮（✎ 重命名、删除）直接暴露在工具栏。新版将全部会话操作收拢到 **⋮ 菜单**：
+- **右键** 直接打开菜单
+- **左键点击** ⋮ 按钮切换菜单
+- 菜单项：✏️ 重命名、🗑️ 删除（仅 non-default 会话显示）
+- 点击菜单外区域自动关闭
+- 清空会话历史前弹出 `window.confirm` 确认框
+
+### 13.9 隐藏工具消息与子智能体中间过程
+
+**文件：** `frontend/src/components/ChatCard.tsx`
+
+消息列表渲染时过滤 `toolCall`、`toolResult` 和 `customType: subagent-*` 消息，只显示**用户消息**和 **AI 文本回复**，大幅降低视觉噪音。
+
+### 13.10 Canvas 画板调色板拖拽
+
+**文件：** `frontend/src/components/CanvasCard.tsx`
+
+- 调色板节点创建方式从 `onClick` 改为 **`onPointerDown`**，支持拖拽放下到任意位置
+- 拖拽时通过 `document.body` 的 `data-drag-type` 属性和 `is-dragging-from-palette` 类名传递类型，React Flow `<Dropzone>` 检测并处理
+- 移除 MiniMap 组件，减少画板视觉噪音
+
+---
+
+### 变更文件总览
+
+| 文件 | 行数变化 | 主要变更 |
+|:---|:---:|:---|
+| `backend/src/server.ts` | +120 / -33 | NapCat 自动启动、QR 码解析、快速登录、重启回调 |
+| `backend/src/qq-adapter.ts` | +138 / -32 | 健康检查、toolUse 处理、重启 NapCat 回调 |
+| `backend/src/knowledge-base/knowledge-base-service.ts` | +36 / -0 | listKbs、switchKb、deleteNote |
+| `backend/src/knowledge-base/knowledge-routes.ts` | +13 / -1 | DELETE /notes/:id 路由 |
+| `config/qq-bot-config.json` | +3 / -1 | qqAccount 配置 |
+| `frontend/src/components/ChatCard.tsx` | +170 / -94 | 会话上下文菜单、确认清空、隐藏工具消息 |
+| `frontend/src/components/QQBotCard.tsx` | +96 / -29 | 二维码内嵌展示、轮询 |
+| `frontend/src/components/CanvasCard.tsx` | +122 / -32 | 调色板拖拽、移除 MiniMap |
+| `frontend/src/components/KnowledgeCard/KnowledgeCard.tsx` | +329 / -32 | 标签页视图、笔记管理、搜索、刷新 |
+| `frontend/src/components/KnowledgeCard/WikiDetailView.tsx` | +37 / -0 | 卡片→笔记转换、删除卡片按钮 |
+| `frontend/src/hooks/useKnowledgeBase.ts` | +7 / -1 | deleteNote / deleteCard API |
 ## 12. 开源许可与版权声明
 
 本项目基于多个优秀的开源软件和组件构建，并完全遵守其各自的开源许可协议：
