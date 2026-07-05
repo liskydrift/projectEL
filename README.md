@@ -61,7 +61,7 @@
 ### 3.2 首次部署
 1. 克隆项目到本地：
    ```bash
-   git clone <repo-url> && cd snapshot-pi
+   git clone <repo-url> && cd projectEL
    ```
 2. 运行一键初始化脚本进行部署：
    ```bash
